@@ -1,0 +1,9 @@
+{
+  "name": "mock-project-workspace",
+  "version": "1.0.0",
+  "description": "Mock application workspace for testing M.I.K.E. agent capabilities",
+  "main": "src/calculator.ts",
+  "scripts": {
+    "test": "echo \"Running tests...\""
+  }
+}

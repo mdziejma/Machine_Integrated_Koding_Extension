@@ -1,0 +1,224 @@
+{
+  "name": "mike-koding-extension",
+  "displayName": "M.I.K.E. - Machine-Integrated Koding Extension",
+  "description": "Production-ready autonomous AI coding assistant for VS Code powered by OpenAI-compatible LLM endpoints, local engines (Ollama, vLLM), and Poolside",
+  "version": "1.5.0",
+  "publisher": "mike-systems",
+  "icon": "media/icon.png",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "copilot",
+    "autonomous-agent",
+    "poolside",
+    "code-generation",
+    "refactoring",
+    "openai",
+    "ollama",
+    "vllm",
+    "open-vsx"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:mike-assistant.sidebar"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mike-container",
+          "title": "M.I.K.E.",
+          "icon": "$(sparkle)"
+        }
+      ]
+    },
+    "views": {
+      "mike-container": [
+        {
+          "type": "webview",
+          "id": "mike-assistant.sidebar",
+          "name": "M.I.K.E. Assistant"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "mike.inlineTransform",
+        "title": "M.I.K.E.: Inline Edit / Transform (Cmd+I)",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.focusAssistant",
+        "title": "M.I.K.E.: Focus Assistant",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.selectSkill",
+        "title": "M.I.K.E.: Invoke Skill...",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.setApiKey",
+        "title": "M.I.K.E.: Set API Key (Secure Storage)",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.configureConnection",
+        "title": "M.I.K.E.: Configure Connection (URL, Key, Model)",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.testConnection",
+        "title": "M.I.K.E.: Test Connection & Probe Endpoints",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.openSettings",
+        "title": "M.I.K.E.: Open Settings",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.revertSessionChanges",
+        "title": "M.I.K.E.: Reject All Session Changes (Rollback)",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.fixError",
+        "title": "Ask M.I.K.E. to Fix This Error",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.explainCode",
+        "title": "Explain Selected Code with M.I.K.E.",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.refactorCode",
+        "title": "Refactor Selected Code with M.I.K.E.",
+        "category": "M.I.K.E."
+      },
+      {
+        "command": "mike.generateTests",
+        "title": "Generate Unit Tests with M.I.K.E.",
+        "category": "M.I.K.E."
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "mike.inlineTransform",
+        "key": "cmd+i",
+        "mac": "cmd+i",
+        "win": "ctrl+i",
+        "linux": "ctrl+i",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "mike.inlineTransform",
+          "group": "mike@0",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "mike.fixError",
+          "group": "mike@1",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "mike.explainCode",
+          "group": "mike@2",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "mike.refactorCode",
+          "group": "mike@3",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "mike.generateTests",
+          "group": "mike@4",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "M.I.K.E.",
+      "properties": {
+        "mike.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434/v1",
+          "description": "Base URL for the OpenAI-compatible LLM API endpoint (e.g. Ollama, vLLM, LM Studio, OpenAI, or custom inference server)"
+        },
+        "mike.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key or Bearer Token for the LLM API endpoint (leave blank for local models)"
+        },
+        "mike.model": {
+          "type": "string",
+          "default": "qwen2.5-coder",
+          "description": "Model ID to query for code completions and tool use (e.g. qwen2.5-coder, deepseek-coder, gpt-4o, etc.)"
+        },
+        "mike.temperature": {
+          "type": "number",
+          "default": 0.0,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Sampling temperature for LLM code generation (default: 0.0 for deterministic, high-precision code generation without typos; higher values increase randomness)"
+        },
+        "mike.maxTokens": {
+          "type": "number",
+          "default": 8192,
+          "minimum": 1024,
+          "maximum": 16384,
+          "description": "Maximum output token limit per generation turn (default: 8192 tokens)"
+        },
+        "mike.customSkillPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional custom directories to scan for SKILL.md files"
+        },
+        "mike.commandMode": {
+          "type": "string",
+          "enum": ["prompt", "auto", "deny"],
+          "enumDescriptions": [
+            "Ask before running commands with options to allow once or allow for the session",
+            "Always allow commands automatically without prompting",
+            "Disable and block all shell command execution"
+          ],
+          "default": "prompt",
+          "description": "Command execution policy for test runners and analysis scripts"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node scripts/test_session_manager.mjs && node scripts/test_inline_transform.mjs",
+    "package": "npm run compile && node scripts/package_vsix.mjs",
+    "package:vsix": "npm run package",
+    "publish:ovsx": "npx -y ovsx publish",
+    "publish:vscode": "npx -y @vscode/vsce publish",
+    "mock-server": "node scripts/mock_llm_server.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

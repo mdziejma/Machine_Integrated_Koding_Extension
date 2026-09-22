@@ -1,0 +1,30 @@
+# Node dependencies
+node_modules/
+
+# TypeScript / Build output
+out/
+dist_vsix/
+*.tsbuildinfo
+*.js.map
+
+# Extension Package Bundles (Release Artifacts)
+*.vsix
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test and coverage artifacts
+.vscode-test/
+coverage/
+.nyc_output/
+
+# Environment configurations & local secrets
+.env
+*.env.local
