@@ -79,8 +79,10 @@ if (fs.existsSync(path.join(rootDir, 'LICENSE'))) {
   fs.copyFileSync(path.join(rootDir, 'LICENSE'), path.join(extDir, 'LICENSE'));
 }
 
-// Copy docs/README.md as README.md
-if (fs.existsSync(path.join(rootDir, 'docs/README.md'))) {
+// Copy root README.md as README.md
+if (fs.existsSync(path.join(rootDir, 'README.md'))) {
+  fs.copyFileSync(path.join(rootDir, 'README.md'), path.join(extDir, 'README.md'));
+} else if (fs.existsSync(path.join(rootDir, 'docs/README.md'))) {
   fs.copyFileSync(path.join(rootDir, 'docs/README.md'), path.join(extDir, 'README.md'));
 }
 
@@ -116,8 +118,8 @@ if (fs.existsSync(path.join(rootDir, '.agent'))) {
   copyDirRecursive(path.join(rootDir, '.agent'), path.join(extDir, '.agent'));
 }
 
-// 6. Zip into VSIX using zip command
-execSync(`cd "${stagingDir}" && zip -q -r "${outVsix}" .`, { stdio: 'inherit' });
+// 6. Zip into VSIX using zip command (with -X to exclude OS extra file attributes for Open VSX compliance)
+execSync(`cd "${stagingDir}" && zip -X -q -r "${outVsix}" .`, { stdio: 'inherit' });
 
 // 7. Cleanup staging directory
 fs.rmSync(stagingDir, { recursive: true, force: true });
