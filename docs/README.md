@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../media/banner.jpg" alt="M.I.K.E. Logo" width="550" />
+  <img src="https://raw.githubusercontent.com/mdziejma/Machine_Integrated_Koding_Extension/main/media/banner.jpg" alt="M.I.K.E. Logo" width="550" />
 </p>
 
 # M.I.K.E. — Developer Hub & Architectural Reference

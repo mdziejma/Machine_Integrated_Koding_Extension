@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/banner.jpg" alt="M.I.K.E. Logo" width="600" />
+  <img src="https://raw.githubusercontent.com/mdziejma/Machine_Integrated_Koding_Extension/main/media/banner.jpg" alt="M.I.K.E. Logo" width="600" />
 </p>
 
 # M.I.K.E. — Machine-Integrated Koding Extension
@@ -160,4 +160,4 @@ npm run mock-server
 
 ## 📄 License
 
-MIT License. Copyright (c) 2026 M.I.K.E. Systems. See [LICENSE](LICENSE) for details.
+MIT License. Copyright (c) 2026 M.I.K.E. LLC. See [LICENSE](LICENSE) for details.

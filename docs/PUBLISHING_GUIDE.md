@@ -35,7 +35,7 @@ The Open VSX Registry is the primary open-source extension registry.
 ### Step 1: Create an Account and Namespace
 1. Go to [open-vsx.org](https://open-vsx.org/) and log in with your GitHub account.
 2. In your user profile settings, navigate to **Namespaces**.
-3. Create or claim a namespace that matches the `"publisher"` field in `package.json` (e.g. `mike-systems` or your personal GitHub username).
+3. Ensure your active namespace matches the `"publisher"` field in `package.json` (`mdzie`).
 
 ### Step 2: Generate an Access Token
 1. In your Open VSX profile, go to **Access Tokens**.
