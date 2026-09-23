@@ -197,6 +197,42 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
           await this.showSkillQuickPick();
           break;
         }
+        case 'insertTerminal': {
+          const activeTerminal = vscode.window.activeTerminal;
+          let content = '';
+          try {
+            const priorClipboard = await vscode.env.clipboard.readText();
+            await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
+            const copied = await vscode.env.clipboard.readText();
+            if (copied && copied !== priorClipboard) {
+              content = copied;
+            } else if (copied && copied.trim().length > 0) {
+              content = copied;
+            }
+          } catch {
+            // fallback
+          }
+
+          const termName = activeTerminal ? activeTerminal.name : 'Terminal';
+          const maxChars = 10000;
+          const textSnippet = content && content.trim()
+            ? (content.length > maxChars ? content.slice(0, maxChars) + '\n...[truncated]' : content.trim())
+            : '';
+
+          if (textSnippet) {
+            this._postMessage({
+              type: 'insertText',
+              text: `\n\`\`\`terminal [${termName}]\n${textSnippet}\n\`\`\`\n`
+            });
+          } else {
+            vscode.window.showInformationMessage('💡 Tip: Highlight text in the Terminal or copy output to paste into M.I.K.E.');
+            this._postMessage({
+              type: 'insertTag',
+              tag: '@terminal '
+            });
+          }
+          break;
+        }
       }
     });
   }
@@ -1251,8 +1287,9 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
     <div id="autocomplete-menu" class="autocomplete-menu"></div>
 
     <div class="context-bar">
-      <button id="add-editor-btn" class="context-chip" type="button" title="Insert @editor to attach active file to prompt">📄 @editor</button>
-      <button id="add-selection-btn" class="context-chip" type="button" title="Insert @selection to attach highlighted lines to prompt">✂️ @selection</button>
+      <button id="add-editor-btn" class="context-chip" type="button" data-tag="@editor" title="Insert @editor to attach active file to prompt">📄 @editor</button>
+      <button id="add-selection-btn" class="context-chip" type="button" data-tag="@selection" title="Insert @selection to attach highlighted lines to prompt">✂️ @selection</button>
+      <button id="add-terminal-btn" class="context-chip" type="button" data-tag="@terminal" title="Insert @terminal to attach active terminal output or selection to prompt">📟 @terminal</button>
     </div>
 
     <div class="textarea-wrapper">
@@ -1309,6 +1346,30 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       const subStatus = document.getElementById('sub-status');
       const statusDot = document.getElementById('status-dot');
       const autocompleteMenu = document.getElementById('autocomplete-menu');
+
+      function insertTag(tag) {
+        if (!promptInput) return;
+        const val = promptInput.value || '';
+        const start = (promptInput.selectionStart !== null && promptInput.selectionStart !== undefined) ? promptInput.selectionStart : val.length;
+        const end = (promptInput.selectionEnd !== null && promptInput.selectionEnd !== undefined) ? promptInput.selectionEnd : val.length;
+        const needsLeadingSpace = (start > 0 && !/\s/.test(val[start - 1]));
+        const insertContent = (needsLeadingSpace ? ' ' : '') + tag + ' ';
+        promptInput.value = val.slice(0, start) + insertContent + val.slice(end);
+        const newPos = start + insertContent.length;
+        promptInput.setSelectionRange(newPos, newPos);
+        promptInput.focus();
+        if (typeof autoResizeTextarea === 'function') autoResizeTextarea();
+      }
+      window.insertTag = insertTag;
+
+      document.addEventListener('click', function(e) {
+        const chip = e.target && e.target.closest ? e.target.closest('.context-chip') : null;
+        if (chip) {
+          e.preventDefault();
+          const tag = chip.getAttribute('data-tag') || (chip.id === 'add-editor-btn' ? '@editor' : chip.id === 'add-selection-btn' ? '@selection' : '@terminal');
+          insertTag(tag);
+        }
+      });
 
       let currentAssistantMsgEl = null;
       let currentAssistantTextEl = null;
@@ -1525,28 +1586,59 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         checkAutocomplete();
       });
 
+      const contextMentions = [
+        { id: 'terminal', name: 'Terminal Output', description: 'Attach active terminal buffer or selection', source: 'context', triggerChar: '@' },
+        { id: 'editor', name: 'Active Editor File', description: 'Attach full active file from editor', source: 'context', triggerChar: '@' },
+        { id: 'selection', name: 'Code Selection', description: 'Attach highlighted editor code selection', source: 'context', triggerChar: '@' }
+      ];
+
+      let autocompleteItems = [];
+      let activeTriggerChar = '/';
+
       function checkAutocomplete() {
         const val = promptInput.value;
         const cursor = promptInput.selectionStart || 0;
         const textBeforeCursor = val.slice(0, cursor);
         const lastSlash = textBeforeCursor.lastIndexOf('/');
+        const lastAt = textBeforeCursor.lastIndexOf('@');
 
-        if (lastSlash !== -1) {
-          const isAtStart = (lastSlash === 0);
-          const isAfterSpace = (lastSlash > 0 && (textBeforeCursor[lastSlash - 1] === ' ' || textBeforeCursor[lastSlash - 1] === '\\n'));
+        let lastTrigger = -1;
+        let triggerChar = '';
+
+        if (lastSlash > lastAt) {
+          lastTrigger = lastSlash;
+          triggerChar = '/';
+        } else if (lastAt > lastSlash) {
+          lastTrigger = lastAt;
+          triggerChar = '@';
+        }
+
+        if (lastTrigger !== -1) {
+          const isAtStart = (lastTrigger === 0);
+          const isAfterSpace = (lastTrigger > 0 && /\s/.test(textBeforeCursor[lastTrigger - 1]));
           
           if (isAtStart || isAfterSpace) {
-            const query = textBeforeCursor.slice(lastSlash + 1).toLowerCase();
+            const query = textBeforeCursor.slice(lastTrigger + 1).toLowerCase();
             if (query.indexOf(' ') === -1) {
-              filteredSkills = availableSkills.filter(function(s) {
-                return !query ||
-                  s.id.toLowerCase().indexOf(query) !== -1 ||
-                  s.name.toLowerCase().indexOf(query) !== -1 ||
-                  s.description.toLowerCase().indexOf(query) !== -1;
-              });
+              activeTriggerChar = triggerChar;
+              if (triggerChar === '/') {
+                autocompleteItems = availableSkills.filter(function(s) {
+                  return !query ||
+                    s.id.toLowerCase().indexOf(query) !== -1 ||
+                    s.name.toLowerCase().indexOf(query) !== -1 ||
+                    s.description.toLowerCase().indexOf(query) !== -1;
+                }).map(function(s) { return Object.assign({}, s, { triggerChar: '/' }); });
+              } else {
+                autocompleteItems = contextMentions.filter(function(m) {
+                  return !query ||
+                    m.id.toLowerCase().indexOf(query) !== -1 ||
+                    m.name.toLowerCase().indexOf(query) !== -1 ||
+                    m.description.toLowerCase().indexOf(query) !== -1;
+                });
+              }
 
-              if (filteredSkills.length > 0) {
-                renderAutocomplete(filteredSkills);
+              if (autocompleteItems.length > 0) {
+                renderAutocomplete(autocompleteItems);
                 return;
               }
             }
@@ -1555,11 +1647,11 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         hideAutocomplete();
       }
 
-      function renderAutocomplete(skills) {
+      function renderAutocomplete(items) {
         autocompleteMenu.innerHTML = '';
-        selectedIndex = Math.min(selectedIndex, Math.max(0, skills.length - 1));
+        selectedIndex = Math.min(selectedIndex, Math.max(0, items.length - 1));
 
-        skills.forEach(function(skill, idx) {
+        items.forEach(function(itemData, idx) {
           const item = document.createElement('div');
           item.className = 'autocomplete-item' + (idx === selectedIndex ? ' selected' : '');
           
@@ -1568,25 +1660,25 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
           
           const idSpan = document.createElement('span');
           idSpan.className = 'item-id';
-          idSpan.textContent = '/' + skill.id;
+          idSpan.textContent = (itemData.triggerChar || '/') + itemData.id;
 
           const sourceSpan = document.createElement('span');
           sourceSpan.className = 'item-source';
-          sourceSpan.textContent = skill.source;
+          sourceSpan.textContent = itemData.source;
 
           header.appendChild(idSpan);
           header.appendChild(sourceSpan);
 
           const desc = document.createElement('div');
           desc.className = 'item-desc';
-          desc.textContent = skill.name + (skill.description ? ' — ' + skill.description : '');
+          desc.textContent = itemData.name + (itemData.description ? ' — ' + itemData.description : '');
 
           item.appendChild(header);
           item.appendChild(desc);
 
           item.addEventListener('mousedown', function(e) {
             e.preventDefault();
-            selectSkill(skill);
+            selectAutocompleteItem(itemData);
           });
 
           autocompleteMenu.appendChild(item);
@@ -1600,15 +1692,16 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         selectedIndex = 0;
       }
 
-      function selectSkill(skill) {
+      function selectAutocompleteItem(itemData) {
         const val = promptInput.value;
         const cursor = promptInput.selectionStart || 0;
         const textBeforeCursor = val.slice(0, cursor);
         const textAfterCursor = val.slice(cursor);
-        const lastSlash = textBeforeCursor.lastIndexOf('/');
+        const trig = itemData.triggerChar || activeTriggerChar || '/';
+        const lastTrig = textBeforeCursor.lastIndexOf(trig);
 
-        const prefix = (lastSlash !== -1) ? textBeforeCursor.slice(0, lastSlash) : '';
-        promptInput.value = prefix + '/' + skill.id + ' ' + textAfterCursor;
+        const prefix = (lastTrig !== -1) ? textBeforeCursor.slice(0, lastTrig) : '';
+        promptInput.value = prefix + trig + itemData.id + ' ' + textAfterCursor;
         
         hideAutocomplete();
         promptInput.focus();
@@ -1619,20 +1712,20 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         if (autocompleteMenu.classList.contains('visible')) {
           if (e.key === 'ArrowDown') {
             e.preventDefault();
-            selectedIndex = (selectedIndex + 1) % filteredSkills.length;
+            selectedIndex = (selectedIndex + 1) % autocompleteItems.length;
             updateSelectedAutocomplete();
             return;
           }
           if (e.key === 'ArrowUp') {
             e.preventDefault();
-            selectedIndex = (selectedIndex - 1 + filteredSkills.length) % filteredSkills.length;
+            selectedIndex = (selectedIndex - 1 + autocompleteItems.length) % autocompleteItems.length;
             updateSelectedAutocomplete();
             return;
           }
           if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
-            if (filteredSkills[selectedIndex]) {
+            if (autocompleteItems[selectedIndex]) {
               e.preventDefault();
-              selectSkill(filteredSkills[selectedIndex]);
+              selectAutocompleteItem(autocompleteItems[selectedIndex]);
               return;
             }
           }
@@ -1656,31 +1749,6 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
             it.scrollIntoView({ block: 'nearest' });
           } else {
             it.classList.remove('selected');
-          }
-        });
-      }
-
-      const addEditorBtn = document.getElementById('add-editor-btn');
-      const addSelectionBtn = document.getElementById('add-selection-btn');
-
-      if (addEditorBtn) {
-        addEditorBtn.addEventListener('click', function() {
-          const val = promptInput.value;
-          if (!val.includes('@editor')) {
-            promptInput.value = val ? val + ' @editor' : '@editor ';
-            promptInput.focus();
-            autoResizeTextarea();
-          }
-        });
-      }
-
-      if (addSelectionBtn) {
-        addSelectionBtn.addEventListener('click', function() {
-          const val = promptInput.value;
-          if (!val.includes('@selection')) {
-            promptInput.value = val ? val + ' @selection' : '@selection ';
-            promptInput.focus();
-            autoResizeTextarea();
           }
         });
       }
@@ -2044,7 +2112,21 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
             break;
           }
           case 'insertText': {
-            promptInput.value = msg.text;
+            const currentVal = promptInput.value;
+            if (currentVal && currentVal.trim()) {
+              promptInput.value = currentVal + (currentVal.endsWith(String.fromCharCode(10)) ? '' : String.fromCharCode(10)) + msg.text;
+            } else {
+              promptInput.value = msg.text;
+            }
+            promptInput.focus();
+            autoResizeTextarea();
+            break;
+          }
+          case 'insertTag': {
+            const val = promptInput.value;
+            if (!val.includes(msg.tag.trim())) {
+              promptInput.value = val ? val + ' ' + msg.tag : msg.tag;
+            }
             promptInput.focus();
             autoResizeTextarea();
             break;

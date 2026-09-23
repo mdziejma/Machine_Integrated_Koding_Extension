@@ -409,13 +409,42 @@ CRITICAL OPERATIONAL RULES:
         const endLine = selection.end.line + 1;
         const contextBlock = `\n\n[ACTIVE SELECTION: ${relPath} (Lines ${startLine}-${endLine})]\n\`\`\`\n${selectedText || '(No text selected)'}\n\`\`\``;
         trimmed = trimmed.replace(/@selection/g, '').trim() + contextBlock;
-      } else if (trimmed.includes('@editor')) {
+      }
+      if (trimmed.includes('@editor')) {
         const fullDocText = doc.getText();
         const maxDocChars = 15000;
         const docSlice = fullDocText.length > maxDocChars ? fullDocText.slice(0, maxDocChars) + '\n...[Content truncated]' : fullDocText;
         const contextBlock = `\n\n[ACTIVE FILE: ${relPath}]\n\`\`\`\n${docSlice}\n\`\`\``;
         trimmed = trimmed.replace(/@editor/g, '').trim() + contextBlock;
       }
+    }
+
+    // Check for @terminal / @output mentions and inject terminal context
+    if (trimmed.includes('@terminal') || trimmed.includes('@output')) {
+      const activeTerminal = vscode.window.activeTerminal;
+      const terminalName = activeTerminal ? activeTerminal.name : 'Terminal';
+      let terminalContent = '';
+
+      try {
+        const priorClipboard = await vscode.env.clipboard.readText();
+        await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
+        const copied = await vscode.env.clipboard.readText();
+        if (copied && copied !== priorClipboard) {
+          terminalContent = copied;
+        } else if (copied && copied.trim().length > 0) {
+          terminalContent = copied;
+        }
+      } catch {
+        // Fallback if terminal copy is unsupported
+      }
+
+      const maxChars = 15000;
+      const termSlice = terminalContent.length > maxChars
+        ? terminalContent.slice(0, maxChars) + '\n...[Content truncated]'
+        : (terminalContent || '(No active terminal selection captured. Highlight terminal text or copy terminal output)');
+
+      const contextBlock = `\n\n[ACTIVE TERMINAL / OUTPUT: ${terminalName}]\n\`\`\`\n${termSlice}\n\`\`\``;
+      trimmed = trimmed.replace(/@terminal/g, '').replace(/@output/g, '').trim() + contextBlock;
     }
 
     const slashMatch = trimmed.match(/^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/);
