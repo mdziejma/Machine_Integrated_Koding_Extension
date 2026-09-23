@@ -674,6 +674,7 @@ export async function runCommandTool(args: {
   if (!isApproved) {
     const choice = await vscode.window.showWarningMessage(
       `M.I.K.E. requests permission to run:\n\n${normalizedCmd}`,
+      { modal: true },
       'Run Once',
       'Always Allow This Session',
       'Deny'
@@ -684,7 +685,7 @@ export async function runCommandTool(args: {
     } else if (choice === 'Run Once') {
       sessionApprovedCommands.add(normalizedCmd);
     } else {
-      throw new Error(`Command execution was denied by user: "${normalizedCmd}"`);
+      throw new Error(`Command execution was denied or dismissed by user: "${normalizedCmd}"`);
     }
   }
 

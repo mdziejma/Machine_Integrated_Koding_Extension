@@ -431,8 +431,6 @@ CRITICAL OPERATIONAL RULES:
         const copied = await vscode.env.clipboard.readText();
         if (copied && copied !== priorClipboard) {
           terminalContent = copied;
-        } else if (copied && copied.trim().length > 0) {
-          terminalContent = copied;
         }
       } catch {
         // Fallback if terminal copy is unsupported
@@ -441,7 +439,7 @@ CRITICAL OPERATIONAL RULES:
       const maxChars = 15000;
       const termSlice = terminalContent.length > maxChars
         ? terminalContent.slice(0, maxChars) + '\n...[Content truncated]'
-        : (terminalContent || '(No active terminal selection captured. Highlight terminal text or copy terminal output)');
+        : (terminalContent || '(No active terminal selection captured. Please highlight the desired terminal output text with your mouse or cursor before using @terminal)');
 
       const contextBlock = `\n\n[ACTIVE TERMINAL / OUTPUT: ${terminalName}]\n\`\`\`\n${termSlice}\n\`\`\``;
       trimmed = trimmed.replace(/@terminal/g, '').replace(/@output/g, '').trim() + contextBlock;
