@@ -2,7 +2,9 @@
   "name": "mike-koding-extension",
   "displayName": "M.I.K.E. - Machine-Integrated Koding Extension",
   "description": "Production-ready autonomous AI coding assistant for VS Code powered by OpenAI-compatible LLM endpoints, local engines (Ollama, vLLM), and Poolside",
+
   "version": "1.5.2",
+
   "publisher": "mdzie",
   "icon": "media/icon.png",
   "license": "MIT",
