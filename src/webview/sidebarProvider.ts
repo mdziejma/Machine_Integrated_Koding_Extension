@@ -206,8 +206,6 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
             const copied = await vscode.env.clipboard.readText();
             if (copied && copied !== priorClipboard) {
               content = copied;
-            } else if (copied && copied.trim().length > 0) {
-              content = copied;
             }
           } catch {
             // fallback
