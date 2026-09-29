@@ -84,8 +84,14 @@ M.I.K.E. operates purely within the Visual Studio Code extension host process. I
 
 1. **Local Custom Tool Registry (`.mike/tools.json` / `.agent/tools/`)**:
    - Zero-dependency local script runner that auto-discovers workspace Python/Bash tools and exposes them as native function-calling tools to the LLM without external MCP networking.
-2. **Context Weight & Token Counter**:
-   - Status bar and sidebar indicator displaying active conversation token count and percentage of model context window used.
+2. **Live Context Window & Token Meter (Indicator Gauge)**:
+   - **Visual Meter:** Real-time token counter and color-coded progress bar in the sidebar header and status bar showing current session token weight vs model capacity (e.g. `🧠 24.5k / 128k (19%)`).
+   - **Model Limit Resolution:** Tri-tier discovery strategy:
+     1. Direct server `/models` metadata (`context_window` / `max_model_len`).
+     2. Built-in model registry mapping known models (Gemini, Claude, GPT, DeepSeek, Qwen, Llama).
+     3. User-configurable fallback setting in sidebar preferences.
+   - **Session Reset Parity:** Triggering `+ New` / `newThread` resets the context calculation back to baseline (~0%) instantly.
+   - **Warning Thresholds:** Dynamic visual cues (Green < 50%, Yellow 50–80%, Red > 80%) before automatic background message pruning occurs.
 3. **Workspace Rules Multi-Root Ingestion**:
    - Support for dynamic multi-root workspaces with per-folder rule hierarchies (`.agent/AGENTS.md`, `.cursorrules`, `MIKE.md`).
 4. **Inline Multi-Cursor Refactoring**:

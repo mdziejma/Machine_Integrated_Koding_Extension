@@ -90,7 +90,7 @@ export interface DirEntry {
  * Writes content to a file via vscode.workspace.fs.
  * If the file already exists, preserves original content and launches side-by-side diff.
  */
-export async function writeFileTool(args: { path: string; content: string }): Promise<{
+export async function writeFileTool(args: { path: string; content: string; abortSignal?: AbortSignal }): Promise<{
   status: 'success';
   bytesWritten: number;
   path: string;
@@ -100,6 +100,9 @@ export async function writeFileTool(args: { path: string; content: string }): Pr
     messages: string[];
   };
 }> {
+  if (args.abortSignal?.aborted) {
+    throw new Error('File write cancelled by user abort.');
+  }
   if (!args.path) {
     throw new Error('Missing required argument: "path"');
   }
@@ -196,11 +199,14 @@ export async function writeFileTool(args: { path: string; content: string }): Pr
  * Tool: delete_file
  * Deletes a file or directory within the workspace using native VS Code VFS.
  */
-export async function deleteFileTool(args: { path: string; recursive?: boolean }): Promise<{
+export async function deleteFileTool(args: { path: string; recursive?: boolean; abortSignal?: AbortSignal }): Promise<{
   status: 'success';
   path: string;
   message: string;
 }> {
+  if (args.abortSignal?.aborted) {
+    throw new Error('File deletion cancelled by user abort.');
+  }
   if (!args.path || args.path.trim() === '') {
     throw new Error('Missing required argument: "path"');
   }
@@ -627,11 +633,20 @@ export async function runCommandTool(args: {
   command: string;
   cwd?: string;
   timeoutSeconds?: number;
+  abortSignal?: AbortSignal;
 }): Promise<{
   exitCode: number;
   stdout: string;
   stderr: string;
 }> {
+  if (args.abortSignal?.aborted) {
+    return {
+      exitCode: 130,
+      stdout: '',
+      stderr: 'Command execution cancelled by user abort.'
+    };
+  }
+
   if (!args.command || args.command.trim() === '') {
     throw new Error('Missing required argument: "command"');
   }
@@ -645,7 +660,7 @@ export async function runCommandTool(args: {
     const targetPath = delMatch[1].trim();
     if (targetPath && !targetPath.includes('*') && !targetPath.includes('?')) {
       try {
-        const delRes = await deleteFileTool({ path: targetPath, recursive: true });
+        const delRes = await deleteFileTool({ path: targetPath, recursive: true, abortSignal: args.abortSignal });
         return {
           exitCode: 0,
           stdout: delRes.message,
@@ -688,6 +703,14 @@ export async function runCommandTool(args: {
     }
   }
 
+  if (args.abortSignal?.aborted) {
+    return {
+      exitCode: 130,
+      stdout: '',
+      stderr: 'Command execution cancelled by user abort.'
+    };
+  }
+
   const folders = vscode.workspace.workspaceFolders;
   const defaultCwd = folders && folders.length > 0 ? folders[0].uri.fsPath : process.cwd();
   const targetCwd = args.cwd ? path.resolve(defaultCwd, args.cwd) : defaultCwd;
@@ -713,6 +736,11 @@ export async function runCommandTool(args: {
         if (isSettled) return;
         isSettled = true;
         if (timer) clearTimeout(timer);
+        if (args.abortSignal) {
+          try {
+            args.abortSignal.removeEventListener('abort', onAbort);
+          } catch {}
+        }
 
         let stdoutText = stdout ? stdout.toString() : '';
         let stderrText = stderr ? stderr.toString() : '';
@@ -738,6 +766,28 @@ export async function runCommandTool(args: {
       }
     );
 
+    const onAbort = () => {
+      if (isSettled) return;
+      isSettled = true;
+      if (timer) clearTimeout(timer);
+      try {
+        child.kill('SIGKILL');
+      } catch {}
+      resolve({
+        exitCode: 130,
+        stdout: '',
+        stderr: 'Command execution terminated by user abort.'
+      });
+    };
+
+    if (args.abortSignal) {
+      if (args.abortSignal.aborted) {
+        onAbort();
+        return;
+      }
+      args.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
+
     // Close stdin immediately so commands that prompt for interactive confirmation don't hang
     try {
       child.stdin?.end();
@@ -747,6 +797,11 @@ export async function runCommandTool(args: {
     timer = setTimeout(() => {
       if (isSettled) return;
       isSettled = true;
+      if (args.abortSignal) {
+        try {
+          args.abortSignal.removeEventListener('abort', onAbort);
+        } catch {}
+      }
       try {
         child.kill('SIGKILL');
       } catch {}
@@ -1077,7 +1132,11 @@ export const OPENAI_TOOLS = [
 /**
  * Dynamic Tool Dispatcher
  */
-export async function executeTool(name: string, rawArgs: string): Promise<string> {
+export async function executeTool(name: string, rawArgs: string, abortSignal?: AbortSignal): Promise<string> {
+  if (abortSignal?.aborted) {
+    throw new Error(`Tool execution for "${name}" cancelled by user abort.`);
+  }
+
   let parsedArgs: Record<string, unknown> = {};
   if (rawArgs && rawArgs.trim().length > 0) {
     try {
@@ -1091,7 +1150,8 @@ export async function executeTool(name: string, rawArgs: string): Promise<string
     case 'write_file': {
       const result = await writeFileTool({
         path: String(parsedArgs.path || ''),
-        content: String(parsedArgs.content ?? '')
+        content: String(parsedArgs.content ?? ''),
+        abortSignal
       });
       return JSON.stringify(result, null, 2);
     }
@@ -1104,7 +1164,8 @@ export async function executeTool(name: string, rawArgs: string): Promise<string
     case 'delete_file': {
       const result = await deleteFileTool({
         path: String(parsedArgs.path || ''),
-        recursive: parsedArgs.recursive !== false
+        recursive: parsedArgs.recursive !== false,
+        abortSignal
       });
       return JSON.stringify(result, null, 2);
     }
@@ -1178,7 +1239,8 @@ export async function executeTool(name: string, rawArgs: string): Promise<string
       const result = await runCommandTool({
         command: String(parsedArgs.command || ''),
         cwd: parsedArgs.cwd ? String(parsedArgs.cwd) : undefined,
-        timeoutSeconds: typeof parsedArgs.timeoutSeconds === 'number' ? parsedArgs.timeoutSeconds : undefined
+        timeoutSeconds: typeof parsedArgs.timeoutSeconds === 'number' ? parsedArgs.timeoutSeconds : undefined,
+        abortSignal
       });
       return JSON.stringify(result, null, 2);
     }

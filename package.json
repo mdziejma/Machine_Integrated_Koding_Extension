@@ -211,6 +211,11 @@
           ],
           "default": "prompt",
           "description": "Command execution policy for test runners and analysis scripts"
+        },
+        "mike.autoContinue": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically continue autonomous execution loops across multi-step turns without pausing for user confirmation (Warning: may execute multiple phases without stopping)"
         }
       }
     }

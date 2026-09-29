@@ -244,6 +244,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
     commandMode?: 'prompt' | 'auto' | 'deny';
     temperature?: number;
     maxTokens?: number;
+    autoContinue?: boolean;
   }): Promise<void> {
     if (!config) return;
 
@@ -957,6 +958,67 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       color: var(--accent);
     }
 
+    .context-chip.auto-continue-toggle {
+      margin-left: auto;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: all 0.2s ease;
+      font-size: 10.5px;
+    }
+
+    .context-chip.auto-continue-toggle.active {
+      background: rgba(227, 179, 65, 0.2);
+      border-color: #e3b341;
+      color: #e3b341;
+      font-weight: 600;
+      box-shadow: 0 0 6px rgba(227, 179, 65, 0.3);
+      opacity: 1;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--badge-bg);
+      transition: .2s;
+      border-radius: 18px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: #e3b341;
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(14px);
+    }
+
     .autocomplete-menu {
       position: absolute;
       bottom: calc(100% + 4px);
@@ -1250,6 +1312,16 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
         <option value="deny">Disabled (Block Shell)</option>
       </select>
     </div>
+    <div class="config-field">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <label class="config-label">Auto-Continue Multi-Turn Loop</label>
+        <label class="toggle-switch" title="When ON, M.I.K.E. will automatically continue across multi-step turns without pausing for user approval">
+          <input id="cfg-auto-continue" type="checkbox" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <span style="font-size: 10px; opacity: 0.65;">When enabled, M.I.K.E. will automatically proceed across multiple turns without waiting for user confirmation (Default: Off).</span>
+    </div>
     <div class="config-actions">
       <span id="cfg-status" class="config-status"></span>
       <div class="btn-group">
@@ -1290,6 +1362,9 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       <button id="add-editor-btn" class="context-chip" type="button" data-tag="@editor" title="Insert @editor to attach active file to prompt">📄 @editor</button>
       <button id="add-selection-btn" class="context-chip" type="button" data-tag="@selection" title="Insert @selection to attach highlighted lines to prompt">✂️ @selection</button>
       <button id="add-terminal-btn" class="context-chip" type="button" data-tag="@terminal" title="Insert @terminal to attach active terminal output or selection to prompt">📟 @terminal</button>
+      <button id="auto-continue-toggle-btn" class="context-chip auto-continue-toggle" type="button" title="Click to toggle Auto-Continue mode (Default: OFF - wait for human approval)">
+        <span id="auto-continue-icon">⚡</span> <span id="auto-continue-label">Auto-Continue: OFF</span>
+      </button>
     </div>
 
     <div class="textarea-wrapper">
@@ -1338,14 +1413,72 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       const cfgTempVal = document.getElementById('cfg-temp-val');
       const cfgMaxTokens = document.getElementById('cfg-max-tokens');
       const cfgCmdMode = document.getElementById('cfg-cmd-mode');
+      const cfgAutoContinue = document.getElementById('cfg-auto-continue');
       const cfgSaveBtn = document.getElementById('cfg-save-btn');
       const cfgTestBtn = document.getElementById('cfg-test-btn');
       const cfgStatus = document.getElementById('cfg-status');
+
+      const autoContinueToggleBtn = document.getElementById('auto-continue-toggle-btn');
+      const autoContinueLabel = document.getElementById('auto-continue-label');
+      const autoContinueIcon = document.getElementById('auto-continue-icon');
 
       const statusLabel = document.getElementById('status-label');
       const subStatus = document.getElementById('sub-status');
       const statusDot = document.getElementById('status-dot');
       const autocompleteMenu = document.getElementById('autocomplete-menu');
+
+      function updateAutoContinueUI(isEnabled) {
+        const active = Boolean(isEnabled);
+        if (cfgAutoContinue) {
+          cfgAutoContinue.checked = active;
+        }
+        if (autoContinueToggleBtn && autoContinueLabel) {
+          if (active) {
+            autoContinueToggleBtn.classList.add('active');
+            autoContinueLabel.textContent = 'Auto-Continue: ON';
+            autoContinueToggleBtn.title = '⚠️ Auto-Continue is ACTIVE: M.I.K.E. will automatically spin multi-turn loops without waiting for human confirmation. Click to turn OFF.';
+          } else {
+            autoContinueToggleBtn.classList.remove('active');
+            autoContinueLabel.textContent = 'Auto-Continue: OFF';
+            autoContinueToggleBtn.title = 'Click to toggle Auto-Continue mode (Default: OFF - wait for human approval between steps).';
+          }
+        }
+      }
+
+      if (autoContinueToggleBtn) {
+        autoContinueToggleBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const nextState = cfgAutoContinue ? !cfgAutoContinue.checked : false;
+          updateAutoContinueUI(nextState);
+
+          const baseUrl = cfgBaseUrl ? cfgBaseUrl.value.trim() : '';
+          const apiKey = cfgApiKey ? cfgApiKey.value.trim() : '';
+          const model = typeof getEffectiveModel === 'function' ? getEffectiveModel() : '';
+          const commandMode = cfgCmdMode ? cfgCmdMode.value : 'prompt';
+          const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
+          const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+
+          vscode.postMessage({
+            type: 'saveConfig',
+            config: {
+              baseUrl: baseUrl,
+              apiKey: apiKey,
+              model: model,
+              commandMode: commandMode,
+              temperature: temperature,
+              maxTokens: maxTokens,
+              autoContinue: nextState
+            }
+          });
+        });
+      }
+
+      if (cfgAutoContinue) {
+        cfgAutoContinue.addEventListener('change', function() {
+          updateAutoContinueUI(cfgAutoContinue.checked);
+        });
+      }
 
       function insertTag(tag) {
         if (!promptInput) return;
@@ -1364,10 +1497,12 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
 
       document.addEventListener('click', function(e) {
         const chip = e.target && e.target.closest ? e.target.closest('.context-chip') : null;
-        if (chip) {
-          e.preventDefault();
-          const tag = chip.getAttribute('data-tag') || (chip.id === 'add-editor-btn' ? '@editor' : chip.id === 'add-selection-btn' ? '@selection' : '@terminal');
-          insertTag(tag);
+        if (chip && chip.id !== 'auto-continue-toggle-btn') {
+          const tag = chip.getAttribute('data-tag') || (chip.id === 'add-editor-btn' ? '@editor' : chip.id === 'add-selection-btn' ? '@selection' : chip.id === 'add-terminal-btn' ? '@terminal' : null);
+          if (tag) {
+            e.preventDefault();
+            insertTag(tag);
+          }
         }
       });
 
@@ -1543,6 +1678,7 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         const commandMode = cfgCmdMode.value;
         const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
         const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+        const autoContinue = cfgAutoContinue ? cfgAutoContinue.checked : false;
 
         cfgStatus.textContent = 'Saving...';
         vscode.postMessage({
@@ -1553,7 +1689,8 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
             model: model,
             commandMode: commandMode,
             temperature: temperature,
-            maxTokens: maxTokens
+            maxTokens: maxTokens,
+            autoContinue: autoContinue
           }
         });
       });
@@ -1563,6 +1700,7 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         const model = getEffectiveModel();
         const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
         const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+        const autoContinue = cfgAutoContinue ? cfgAutoContinue.checked : false;
 
         vscode.postMessage({
           type: 'testConnection',
@@ -1572,7 +1710,8 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
             model: model,
             commandMode: cfgCmdMode.value,
             temperature: temperature,
-            maxTokens: maxTokens
+            maxTokens: maxTokens,
+            autoContinue: autoContinue
           }
         });
       });
@@ -2067,6 +2206,11 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
                   cfgMaxTokens.value = 8192;
                 }
               }
+              if (msg.config.autoContinue !== undefined) {
+                updateAutoContinueUI(Boolean(msg.config.autoContinue));
+              } else {
+                updateAutoContinueUI(false);
+              }
             }
             break;
           }
@@ -2093,6 +2237,7 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
                 const model = getEffectiveModel();
                 const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
                 const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+                const autoContinue = cfgAutoContinue ? cfgAutoContinue.checked : false;
 
                 vscode.postMessage({
                   type: 'saveConfig',
@@ -2102,7 +2247,8 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
                     model: model,
                     commandMode: cfgCmdMode.value,
                     temperature: temperature,
-                    maxTokens: maxTokens
+                    maxTokens: maxTokens,
+                    autoContinue: autoContinue
                   }
                 });
               }

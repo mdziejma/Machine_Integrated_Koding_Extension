@@ -55,7 +55,8 @@ CRITICAL OPERATIONAL RULES:
 3. ZERO SHORTCUTS & 100% COMPLETENESS MANDATE: NEVER omit code, use lazy abbreviations, or write comments like '// TODO: implement', '// ... existing code ...', '/* ... */', 'pass', or partial stubs. ALWAYS generate 100% complete, fully functional, syntactically flawless code with zero typos, correct imports, and proper type definitions.
 4. IMMEDIATE COMPILER SELF-CORRECTION: If write_file returns compiler errors or LSP diagnostic warnings, immediately inspect the issues and issue a corrected write_file call to achieve zero compiler errors.
 5. SKILL ADHERENCE: When a skill is activated, strictly follow the specialized instructions, templates, and domain rules provided in that skill.
-6. Be precise, concise, and professional in your communications.`;
+6. DISCIPLINED PHASE EXECUTION & HANDOFF: Complete the requested task or current phase accurately. When a skill or user directive requests a pause, checkpoint, handoff, or human authorization, present your deliverables clearly, state your status, and STOP executing tool calls to await user confirmation. Never jump ahead to unapproved subsequent phases.
+7. Be precise, concise, and professional in your communications.`;
 
   private static secretStorage?: vscode.SecretStorage;
   private static globalState?: vscode.Memento;
@@ -78,6 +79,7 @@ CRITICAL OPERATIONAL RULES:
     commandMode?: 'prompt' | 'auto' | 'deny';
     temperature?: number;
     maxTokens?: number;
+    autoContinue?: boolean;
   }): Promise<void> {
     if (config.baseUrl && config.baseUrl.trim()) {
       const cleanUrl = config.baseUrl.trim();
@@ -102,6 +104,9 @@ CRITICAL OPERATIONAL RULES:
     if (config.maxTokens !== undefined) {
       await this.globalState?.update('mike.maxTokens', Number(config.maxTokens));
     }
+    if (config.autoContinue !== undefined) {
+      await this.globalState?.update('mike.autoContinue', Boolean(config.autoContinue));
+    }
     if (config.apiKey !== undefined && config.apiKey.trim() !== '') {
       await this.secretStorage?.store('mike.apiKey', config.apiKey.trim());
     }
@@ -123,6 +128,9 @@ CRITICAL OPERATIONAL RULES:
       }
       if (config.maxTokens !== undefined) {
         await vsConfig.update('maxTokens', Number(config.maxTokens), vscode.ConfigurationTarget.Global);
+      }
+      if (config.autoContinue !== undefined) {
+        await vsConfig.update('autoContinue', Boolean(config.autoContinue), vscode.ConfigurationTarget.Global);
       }
     } catch {
       // Ignored if global settings.json is write-protected; globalState & secretStorage handle it
@@ -269,6 +277,7 @@ CRITICAL OPERATIONAL RULES:
     commandMode: 'prompt' | 'auto' | 'deny';
     temperature: number;
     maxTokens: number;
+    autoContinue: boolean;
   }> {
     const config = vscode.workspace.getConfiguration('mike');
 
@@ -322,7 +331,17 @@ CRITICAL OPERATIONAL RULES:
     const configMaxTokens = config.get<number>('maxTokens');
     const maxTokens = storedMaxTokens !== undefined ? storedMaxTokens : (configMaxTokens !== undefined ? configMaxTokens : 8192);
 
-    return { baseUrl, apiKey, model, commandMode, temperature, maxTokens };
+    // 7. Auto-Continue priority: globalState -> settings -> false (Default: Step-by-Step with user confirmation)
+    const storedAutoContinue = this.globalState?.get<boolean>('mike.autoContinue');
+    const configAutoContinue = config.get<boolean>('autoContinue');
+    const autoContinue =
+      storedAutoContinue !== undefined
+        ? storedAutoContinue
+        : configAutoContinue !== undefined
+        ? configAutoContinue
+        : false;
+
+    return { baseUrl, apiKey, model, commandMode, temperature, maxTokens, autoContinue };
   }
 
   /**
@@ -703,7 +722,7 @@ ${userMessage}`;
     callbacks: AgentCallbacks,
     abortSignal: AbortSignal
   ): Promise<ChatMessage[]> {
-    const { baseUrl, apiKey, model, temperature, maxTokens } = await this.getConfig();
+    const { baseUrl, apiKey, model, temperature, maxTokens, autoContinue } = await this.getConfig();
     const endpoint = this.lastWorkingEndpoint || this.resolveEndpoint(baseUrl);
 
     const workingHistory: ChatMessage[] = [...history];
@@ -712,8 +731,9 @@ ${userMessage}`;
       workingHistory.unshift({ role: 'system', content: dynamicSystemPrompt });
     }
 
-    const MAX_TURNS = 20;
+    const MAX_TURNS = 50;
     let turnCount = 0;
+    let consecutiveReflections = 0;
 
     while (turnCount < MAX_TURNS) {
       if (abortSignal.aborted) {
@@ -916,10 +936,58 @@ ${userMessage}`;
       };
       workingHistory.push(assistantMessage);
 
+      // Handle Case: Model emitted text without tool calls
       if (emittedToolCalls.length === 0) {
+        const trimmed = (accumulatedText || '').trim();
+
+        // 1. If Auto-Continue is OFF (the default), ALWAYS stop immediately and wait for user input
+        if (!autoContinue) {
+          callbacks.onStatusUpdate?.('Ready');
+          break;
+        }
+
+        // 2. When Auto-Continue is ON: Never auto-continue if output signals completion or awaiting handoff/pause
+        const isExplicitComplete =
+          trimmed.includes('TASK_COMPLETE') ||
+          trimmed.includes('Task complete') ||
+          trimmed.includes('Done.') ||
+          trimmed.includes('Finished.') ||
+          trimmed.toLowerCase().includes('all changes have been applied') ||
+          trimmed.toLowerCase().includes('all tasks complete');
+
+        const isExplicitHandoff =
+          /(awaiting|stand(?:ing)? by|human (?:authorization|interaction|approval|confirmation|input|review)|waiting for (?:human|user|authorization|approval|confirmation|input)|phase (?:complete|done|finished)|please confirm|let me know if you want|ready for your|awaiting your)/i.test(
+            trimmed
+          );
+
+        // Check if the model is reflecting mid-task or stating intent for next steps
+        const hasContinuationIntent =
+          /(will now|next step|proceeding to|now let'?s|let me (now |inspect|read|check|create|write|modify)|now (inspect|analyz|read|creat|writ)|continue with|in the next step)/i.test(
+            trimmed
+          );
+
+        const shouldAutoContinue =
+          !isExplicitComplete &&
+          !isExplicitHandoff &&
+          hasContinuationIntent &&
+          consecutiveReflections < 2;
+
+        if (shouldAutoContinue && turnCount < MAX_TURNS) {
+          consecutiveReflections++;
+          callbacks.onStatusUpdate?.(`Autonomous step ${turnCount}: continuing execution...`);
+          workingHistory.push({
+            role: 'user',
+            content: 'Continue autonomously with the task. Proceed directly to the next required tool call or implementation step without pausing.'
+          });
+          continue; // Spin the loop autonomously
+        }
+
         callbacks.onStatusUpdate?.('Ready');
         break;
       }
+
+      // Model called tools: reset reflection counter
+      consecutiveReflections = 0;
 
       for (const toolCall of emittedToolCalls) {
         if (abortSignal.aborted) {
@@ -937,7 +1005,7 @@ ${userMessage}`;
         let isError = false;
 
         try {
-          toolOutput = await executeTool(toolCall.function.name, toolCall.function.arguments);
+          toolOutput = await executeTool(toolCall.function.name, toolCall.function.arguments, abortSignal);
         } catch (err: unknown) {
           isError = true;
           toolOutput = `Tool execution error: ${(err as Error).message}`;
