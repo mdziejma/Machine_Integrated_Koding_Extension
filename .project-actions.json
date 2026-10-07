@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "archetype": "vscode-extension",
+  "actions": [
+    {
+      "id": "build",
+      "label": "🔨 Build",
+      "text": "$(tools) BUILD",
+      "command": "npm run compile",
+      "description": "Compile TypeScript sources into ./out.",
+      "tooltip": "Compile TypeScript sources into ./out."
+    },
+    {
+      "id": "test",
+      "label": "🧪 Run Tests",
+      "text": "$(beaker) TEST",
+      "command": "npm test",
+      "description": "Run session persistence and inline transform test suites.",
+      "tooltip": "Run session persistence and inline transform test suites."
+    },
+    {
+      "id": "mock_llm",
+      "label": "🤖 Start Mock LLM",
+      "text": "$(server-process) MOCK LLM",
+      "command": "npm run mock-server",
+      "description": "Launch zero-dependency local OpenAI-compatible mock LLM server (port 11435) for offline connectivity testing.",
+      "tooltip": "Launch zero-dependency local OpenAI-compatible mock LLM server (port 11435) for offline connectivity testing."
+    },
+    {
+      "id": "package",
+      "label": "📦 Package VSIX",
+      "text": "$(package) PACKAGE",
+      "command": "npm run package",
+      "description": "Compile and package standalone .vsix extension bundle.",
+      "tooltip": "Compile and package standalone .vsix extension bundle."
+    },
+    {
+      "id": "publish_ovsx",
+      "label": "🌐 Publish Open VSX",
+      "text": "$(cloud-upload) OPEN-VSX",
+      "command": "npx -y ovsx publish *.vsix",
+      "description": "Publish packaged VSIX artifact to Open VSX Registry.",
+      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry."
+    }
+  ]
+}

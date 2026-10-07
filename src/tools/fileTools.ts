@@ -43,6 +43,9 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
 // Global instance of the diff provider
 export const diffContentProvider = new DiffContentProvider();
 
+import * as fs from 'fs';
+import * as os from 'os';
+
 /**
  * Safely resolves a relative or absolute file path to a vscode.Uri within the active workspace.
  */
@@ -57,14 +60,29 @@ export function resolveWorkspaceUri(filePath: string): vscode.Uri {
     throw new Error('No workspace folder is open in VS Code. Please open a folder (File > Open Folder) before using M.I.K.E.');
   }
 
+  let normalized = filePath.trim();
+
+  // Support tilde home expansion (e.g. ~/.config/poolside/AGENTS.md)
+  if (normalized.startsWith('~')) {
+    normalized = path.join(os.homedir(), normalized.slice(1).replace(/^[\\/]+/, ''));
+    return vscode.Uri.file(normalized);
+  }
+
   // If already a valid absolute URI string (e.g. file:///...)
-  if (filePath.startsWith('file://')) {
-    return vscode.Uri.parse(filePath);
+  if (normalized.startsWith('file://')) {
+    return vscode.Uri.parse(normalized);
   }
 
   // If it's a Windows drive path (e.g. C:\foo or C:/foo)
-  if (/^[a-zA-Z]:[\\/]/.test(filePath)) {
-    return vscode.Uri.file(filePath);
+  if (/^[a-zA-Z]:[\\/]/.test(normalized)) {
+    return vscode.Uri.file(normalized);
+  }
+
+  // Check if it's an existing absolute path or home path on the host filesystem (e.g. /Users/..., /opt/..., /tmp/...)
+  if (path.isAbsolute(normalized)) {
+    if (fs.existsSync(normalized) || normalized.startsWith(os.homedir())) {
+      return vscode.Uri.file(normalized);
+    }
   }
 
   if (!primaryWorkspace) {
@@ -73,7 +91,7 @@ export function resolveWorkspaceUri(filePath: string): vscode.Uri {
 
   // Normalize path by stripping leading slashes or relative ./ prefixes so that paths
   // like "/mike_demo.ts", "./mike_demo.ts", or "mike_demo.ts" resolve safely to the workspace folder
-  const normalizedRel = filePath.replace(/^([\\/]+|\.\/|\.\\)+/, '');
+  const normalizedRel = normalized.replace(/^([\\/]+|\.\/|\.\\)+/, '');
   return vscode.Uri.joinPath(primaryWorkspace, normalizedRel);
 }
 
@@ -90,7 +108,7 @@ export interface DirEntry {
  * Writes content to a file via vscode.workspace.fs.
  * If the file already exists, preserves original content and launches side-by-side diff.
  */
-export async function writeFileTool(args: { path: string; content: string; abortSignal?: AbortSignal }): Promise<{
+export async function writeFileTool(args: { path: string; content: string }): Promise<{
   status: 'success';
   bytesWritten: number;
   path: string;
@@ -100,9 +118,6 @@ export async function writeFileTool(args: { path: string; content: string; abort
     messages: string[];
   };
 }> {
-  if (args.abortSignal?.aborted) {
-    throw new Error('File write cancelled by user abort.');
-  }
   if (!args.path) {
     throw new Error('Missing required argument: "path"');
   }
@@ -199,14 +214,11 @@ export async function writeFileTool(args: { path: string; content: string; abort
  * Tool: delete_file
  * Deletes a file or directory within the workspace using native VS Code VFS.
  */
-export async function deleteFileTool(args: { path: string; recursive?: boolean; abortSignal?: AbortSignal }): Promise<{
+export async function deleteFileTool(args: { path: string; recursive?: boolean }): Promise<{
   status: 'success';
   path: string;
   message: string;
 }> {
-  if (args.abortSignal?.aborted) {
-    throw new Error('File deletion cancelled by user abort.');
-  }
   if (!args.path || args.path.trim() === '') {
     throw new Error('Missing required argument: "path"');
   }
@@ -623,6 +635,52 @@ export function resetCommandPermissions(): void {
   sessionApprovedCommands.clear();
 }
 
+// Active running child processes registry for instant cancellation/kill
+export const activeToolProcesses = new Map<string, { child: cp.ChildProcess; kill: () => void }>();
+
+export function killProcessTree(child: cp.ChildProcess) {
+  if (!child || !child.pid) return;
+  try {
+    if (process.platform === 'win32') {
+      cp.execSync(`taskkill /pid ${child.pid} /T /F 2>nul || exit 0`);
+    } else {
+      // On Unix / macOS: kill the child process and all of its spawned subprocesses (e.g. python runners)
+      try {
+        cp.execSync(`pkill -9 -P ${child.pid} 2>/dev/null || true`);
+      } catch {}
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }
+    }
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {}
+  }
+}
+
+export function killRunningToolProcess(toolId?: string): boolean {
+  if (toolId && activeToolProcesses.has(toolId)) {
+    const item = activeToolProcesses.get(toolId);
+    item?.kill();
+    activeToolProcesses.delete(toolId);
+    return true;
+  }
+  let killed = false;
+  for (const [id, item] of activeToolProcesses.entries()) {
+    try {
+      item.kill();
+      killed = true;
+    } catch {}
+    activeToolProcesses.delete(id);
+  }
+  return killed;
+}
+
 /**
  * Tool: run_command
  * Safely executes unit tests, test suites, builds, or analysis/metric scripts within workspace.
@@ -634,19 +692,12 @@ export async function runCommandTool(args: {
   cwd?: string;
   timeoutSeconds?: number;
   abortSignal?: AbortSignal;
+  toolCallId?: string;
 }): Promise<{
   exitCode: number;
   stdout: string;
   stderr: string;
 }> {
-  if (args.abortSignal?.aborted) {
-    return {
-      exitCode: 130,
-      stdout: '',
-      stderr: 'Command execution cancelled by user abort.'
-    };
-  }
-
   if (!args.command || args.command.trim() === '') {
     throw new Error('Missing required argument: "command"');
   }
@@ -660,7 +711,7 @@ export async function runCommandTool(args: {
     const targetPath = delMatch[1].trim();
     if (targetPath && !targetPath.includes('*') && !targetPath.includes('?')) {
       try {
-        const delRes = await deleteFileTool({ path: targetPath, recursive: true, abortSignal: args.abortSignal });
+        const delRes = await deleteFileTool({ path: targetPath, recursive: true });
         return {
           exitCode: 0,
           stdout: delRes.message,
@@ -689,6 +740,7 @@ export async function runCommandTool(args: {
   if (!isApproved) {
     const choice = await vscode.window.showWarningMessage(
       `M.I.K.E. requests permission to run:\n\n${normalizedCmd}`,
+      { modal: true },
       'Run Once',
       'Always Allow This Session',
       'Deny'
@@ -699,16 +751,8 @@ export async function runCommandTool(args: {
     } else if (choice === 'Run Once') {
       sessionApprovedCommands.add(normalizedCmd);
     } else {
-      throw new Error(`Command execution was denied by user: "${normalizedCmd}"`);
+      throw new Error(`Command execution was denied or dismissed by user: "${normalizedCmd}"`);
     }
-  }
-
-  if (args.abortSignal?.aborted) {
-    return {
-      exitCode: 130,
-      stdout: '',
-      stderr: 'Command execution cancelled by user abort.'
-    };
   }
 
   const folders = vscode.workspace.workspaceFolders;
@@ -719,6 +763,7 @@ export async function runCommandTool(args: {
   return new Promise((resolve) => {
     let timer: NodeJS.Timeout | null = null;
     let isSettled = false;
+    const registrationId = args.toolCallId || `cmd_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     const child = cp.exec(
       normalizedCmd,
@@ -735,12 +780,8 @@ export async function runCommandTool(args: {
       (error, stdout, stderr) => {
         if (isSettled) return;
         isSettled = true;
+        activeToolProcesses.delete(registrationId);
         if (timer) clearTimeout(timer);
-        if (args.abortSignal) {
-          try {
-            args.abortSignal.removeEventListener('abort', onAbort);
-          } catch {}
-        }
 
         let stdoutText = stdout ? stdout.toString() : '';
         let stderrText = stderr ? stderr.toString() : '';
@@ -766,19 +807,33 @@ export async function runCommandTool(args: {
       }
     );
 
+    const onKill = () => {
+      if (isSettled) return;
+      isSettled = true;
+      activeToolProcesses.delete(registrationId);
+      if (timer) clearTimeout(timer);
+      killProcessTree(child);
+      resolve({
+        exitCode: 137,
+        stdout: '',
+        stderr: 'Command execution terminated by user (Kill Process).'
+      });
+    };
+
     const onAbort = () => {
       if (isSettled) return;
       isSettled = true;
+      activeToolProcesses.delete(registrationId);
       if (timer) clearTimeout(timer);
-      try {
-        child.kill('SIGKILL');
-      } catch {}
+      killProcessTree(child);
       resolve({
         exitCode: 130,
         stdout: '',
         stderr: 'Command execution terminated by user abort.'
       });
     };
+
+    activeToolProcesses.set(registrationId, { child, kill: onKill });
 
     if (args.abortSignal) {
       if (args.abortSignal.aborted) {
@@ -797,14 +852,13 @@ export async function runCommandTool(args: {
     timer = setTimeout(() => {
       if (isSettled) return;
       isSettled = true;
+      activeToolProcesses.delete(registrationId);
       if (args.abortSignal) {
         try {
           args.abortSignal.removeEventListener('abort', onAbort);
         } catch {}
       }
-      try {
-        child.kill('SIGKILL');
-      } catch {}
+      killProcessTree(child);
       resolve({
         exitCode: 124,
         stdout: '',
@@ -1132,7 +1186,12 @@ export const OPENAI_TOOLS = [
 /**
  * Dynamic Tool Dispatcher
  */
-export async function executeTool(name: string, rawArgs: string, abortSignal?: AbortSignal): Promise<string> {
+export async function executeTool(
+  name: string,
+  rawArgs: string,
+  abortSignal?: AbortSignal,
+  toolCallId?: string
+): Promise<string> {
   if (abortSignal?.aborted) {
     throw new Error(`Tool execution for "${name}" cancelled by user abort.`);
   }
@@ -1150,8 +1209,7 @@ export async function executeTool(name: string, rawArgs: string, abortSignal?: A
     case 'write_file': {
       const result = await writeFileTool({
         path: String(parsedArgs.path || ''),
-        content: String(parsedArgs.content ?? ''),
-        abortSignal
+        content: String(parsedArgs.content ?? '')
       });
       return JSON.stringify(result, null, 2);
     }
@@ -1164,8 +1222,7 @@ export async function executeTool(name: string, rawArgs: string, abortSignal?: A
     case 'delete_file': {
       const result = await deleteFileTool({
         path: String(parsedArgs.path || ''),
-        recursive: parsedArgs.recursive !== false,
-        abortSignal
+        recursive: parsedArgs.recursive !== false
       });
       return JSON.stringify(result, null, 2);
     }
@@ -1240,7 +1297,8 @@ export async function executeTool(name: string, rawArgs: string, abortSignal?: A
         command: String(parsedArgs.command || ''),
         cwd: parsedArgs.cwd ? String(parsedArgs.cwd) : undefined,
         timeoutSeconds: typeof parsedArgs.timeoutSeconds === 'number' ? parsedArgs.timeoutSeconds : undefined,
-        abortSignal
+        abortSignal,
+        toolCallId
       });
       return JSON.stringify(result, null, 2);
     }

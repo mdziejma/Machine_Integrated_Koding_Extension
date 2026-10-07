@@ -65,6 +65,21 @@ M.I.K.E. operates purely within the Visual Studio Code extension host process. I
 - **FR-09.1:** Shell commands invoked via `run_command` shall strictly enforce user execution policy (`prompt`, `auto`, `deny`).
 - **FR-09.2:** In `prompt` mode, users can approve `[ Run Once ]`, `[ Always Allow This Session ]`, or `[ Deny ]`.
 
+### FR-10: Real-Time Context Token Meter & Model Capacity Gauge
+- **FR-10.1:** Real-time token counter and color-coded progress bar in the sidebar header showing current session token weight vs model capacity (e.g. `🧠 24.5k / 128k (19%)`).
+- **FR-10.2:** Model context limit auto-resolution across Gemini (1M), Claude (200k), DeepSeek/Qwen/GPT/Llama (128k).
+- **FR-10.3:** Session reset parity: Triggering `+ New` / `newThread` resets the context calculation back to baseline (~0%) instantly.
+- **FR-10.4:** Dynamic visual cues (Green < 50%, Yellow 50–80%, Red > 80%).
+
+### FR-11: Workspace & Editor Context Chips (`@editor`, `@selection`, `@terminal`, `@problems`)
+- **FR-11.1:** `@editor` attaches the full active file.
+- **FR-11.2:** `@selection` preserves highlighted line selections even when focus transfers to the webview sidebar via `EditorContextTracker`.
+- **FR-11.3:** `@terminal` captures the active terminal buffer or user highlighted terminal selection, automatically preserving user clipboard state.
+- **FR-11.4:** `@problems` captures active workspace and active-file compiler, TypeScript, and linter errors.
+
+### FR-12: Universal Workspace Rules Auto-Discovery
+- **FR-12.1:** Automatically discovers and loads project directives from `AGENTS.md`, `.agent/AGENTS.md`, `.agents/rules/AGENTS.md`, `GEMINI.md`, `MIKE.md`, `.mike/AGENTS.md`, `.mike/rules.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules`, `.github/copilot-instructions.md`, and `.windsurfrules`.
+
 ---
 
 ## 3. Non-Functional & Security Requirements (NFR)
@@ -84,17 +99,7 @@ M.I.K.E. operates purely within the Visual Studio Code extension host process. I
 
 1. **Local Custom Tool Registry (`.mike/tools.json` / `.agent/tools/`)**:
    - Zero-dependency local script runner that auto-discovers workspace Python/Bash tools and exposes them as native function-calling tools to the LLM without external MCP networking.
-2. **Live Context Window & Token Meter (Indicator Gauge)**:
-   - **Visual Meter:** Real-time token counter and color-coded progress bar in the sidebar header and status bar showing current session token weight vs model capacity (e.g. `🧠 24.5k / 128k (19%)`).
-   - **Model Limit Resolution:** Tri-tier discovery strategy:
-     1. Direct server `/models` metadata (`context_window` / `max_model_len`).
-     2. Built-in model registry mapping known models (Gemini, Claude, GPT, DeepSeek, Qwen, Llama).
-     3. User-configurable fallback setting in sidebar preferences.
-   - **Session Reset Parity:** Triggering `+ New` / `newThread` resets the context calculation back to baseline (~0%) instantly.
-   - **Warning Thresholds:** Dynamic visual cues (Green < 50%, Yellow 50–80%, Red > 80%) before automatic background message pruning occurs.
-3. **Workspace Rules Multi-Root Ingestion**:
-   - Support for dynamic multi-root workspaces with per-folder rule hierarchies (`.agent/AGENTS.md`, `.cursorrules`, `MIKE.md`).
-4. **Inline Multi-Cursor Refactoring**:
+2. **Inline Multi-Cursor Refactoring**:
    - Simultaneous inline transform across multi-cursor selections and split editors.
 
 ---
@@ -103,12 +108,15 @@ M.I.K.E. operates purely within the Visual Studio Code extension host process. I
 
 | Requirement ID | Module | Implementation File | Verification Status |
 | :--- | :--- | :--- | :--- |
-| **FR-01** (VFS File I/O) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (Pure Buffer FS) |
-| **FR-02** (In-Memory Diff) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (`mike-diff://`) |
-| **FR-03** (Workspace Grep) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (`grep_search`) |
-| **FR-04** (Diagnostics) | `fileTools` / `client` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (`get_diagnostics`) |
-| **FR-05** (Checkpoints / Rollback) | `checkpointManager` | [`src/tools/checkpointManager.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/tools/checkpointManager.ts) | PASSED (`⏪ Reject All`) |
-| **FR-06** (Session Persistence) | `sessionManager` | [`src/agent/sessionManager.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/agent/sessionManager.ts) | PASSED (`npm test`) |
-| **FR-07** (Inline Transform) | `inlineTransform` / `client` | [`src/editor/inlineTransform.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/editor/inlineTransform.ts) | PASSED (`Cmd+I` HUD) |
-| **FR-08** (Skills & Autocomplete) | `skillManager` / `sidebar` | [`src/skills/skillManager.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/skills/skillManager.ts) | PASSED (Bidirectional sync) |
-| **FR-09** (Command Policy) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/MIKE_work/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (Session allowlist) |
+| **FR-01** (VFS File I/O) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (Pure Buffer FS) |
+| **FR-02** (In-Memory Diff) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (`mike-diff://`) |
+| **FR-03** (Workspace Grep) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (`grep_search`) |
+| **FR-04** (Diagnostics) | `fileTools` / `client` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (`get_diagnostics`) |
+| **FR-05** (Checkpoints / Rollback) | `checkpointManager` | [`src/tools/checkpointManager.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/tools/checkpointManager.ts) | PASSED (`⏪ Reject All`) |
+| **FR-06** (Session Persistence) | `sessionManager` | [`src/agent/sessionManager.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/agent/sessionManager.ts) | PASSED (`npm test`) |
+| **FR-07** (Inline Transform) | `inlineTransform` / `client` | [`src/editor/inlineTransform.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/editor/inlineTransform.ts) | PASSED (`Cmd+I` HUD) |
+| **FR-08** (Skills & Autocomplete) | `skillManager` / `sidebar` | [`src/skills/skillManager.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/skills/skillManager.ts) | PASSED (Bidirectional sync) |
+| **FR-09** (Command Policy) | `fileTools` | [`src/tools/fileTools.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/tools/fileTools.ts) | PASSED (Session allowlist & kill switch) |
+| **FR-10** (Context Token Meter) | `client` / `sidebar` | [`src/webview/sidebarProvider.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/webview/sidebarProvider.ts) | PASSED (Live gauge & model resolver) |
+| **FR-11** (Context Chips) | `editorTracker` / `client` | [`src/editor/editorTracker.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/editor/editorTracker.ts) | PASSED (`@editor`, `@selection`, `@terminal`, `@problems`) |
+| **FR-12** (Universal Rules) | `client` | [`src/agent/client.ts`](file:///Users/mdzie/GitHub/Machine_Integrated_Koding_Extension/src/agent/client.ts) | PASSED (Multi-format rules ingestion) |

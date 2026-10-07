@@ -51,6 +51,36 @@ const server = http.createServer(async (req, res) => {
         const messages = parsed.messages || [];
         const lastMessage = messages[messages.length - 1];
 
+        // Handle Non-Streaming JSON Ping / Completion
+        if (parsed.stream === false) {
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          });
+          res.end(JSON.stringify({
+            id: 'chatcmpl-mock-' + Date.now(),
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: parsed.model || 'mock-coder-v1',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: 'Hello! M.I.K.E. connection test successful.'
+                },
+                finish_reason: 'stop'
+              }
+            ],
+            usage: {
+              prompt_tokens: 5,
+              completion_tokens: 10,
+              total_tokens: 15
+            }
+          }));
+          return;
+        }
+
         // Prepare SSE Response
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',

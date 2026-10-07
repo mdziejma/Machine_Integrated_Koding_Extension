@@ -21,7 +21,7 @@
 ### 1. Install Extension
 Install from the Open VSX Registry, VS Code Marketplace, or via `.vsix`:
 ```bash
-code --install-extension mike-koding-extension-1.5.0.vsix --force
+code --install-extension mike-koding-extension-1.6.0.vsix --force
 ```
 
 ### 2. Connect to Your LLM Backend
