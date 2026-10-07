@@ -38,9 +38,9 @@
       "id": "publish_ovsx",
       "label": "🌐 Publish Open VSX",
       "text": "$(cloud-upload) OPEN-VSX",
-      "command": "npx -y ovsx publish *.vsix",
-      "description": "Publish packaged VSIX artifact to Open VSX Registry.",
-      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry."
+      "command": "npm run publish:ovsx",
+      "description": "Publish packaged VSIX artifact to Open VSX Registry (prompts for PAT).",
+      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry (prompts for PAT)."
     }
   ]
 }

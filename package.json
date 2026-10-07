@@ -232,7 +232,7 @@
     "test": "npm run compile && node scripts/test_webview_syntax.mjs && node scripts/test_session_manager.mjs && node scripts/test_inline_transform.mjs",
     "package": "npm run compile && node scripts/test_webview_syntax.mjs && node scripts/package_vsix.mjs",
     "package:vsix": "npm run package",
-    "publish:ovsx": "npx -y ovsx publish",
+    "publish:ovsx": "node scripts/publish_ovsx.mjs",
     "publish:vscode": "npx -y @vscode/vsce publish",
     "mock-server": "node scripts/mock_llm_server.mjs"
   },
