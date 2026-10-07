@@ -1168,7 +1168,6 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       transform: translateX(14px);
     }
 
->>>>>>> Stashed changes
     .autocomplete-menu {
       position: absolute;
       bottom: calc(100% + 4px);
@@ -1642,7 +1641,6 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         });
       }
 
->>>>>>> Stashed changes
       function insertTag(tag) {
         if (!promptInput) return;
         const val = promptInput.value || '';
