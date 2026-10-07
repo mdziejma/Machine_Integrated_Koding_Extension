@@ -386,6 +386,14 @@ CRITICAL OPERATIONAL RULES:
       candidates.add(`${root}/openai/v1/models`);
       candidates.add(`${root}/models`);
       candidates.add(`${root}/api/v1/models`);
+
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+        candidates.add('http://localhost:11435/v1/models'); // M.I.K.E. Mock Server
+        candidates.add('http://localhost:11434/v1/models'); // Ollama
+        candidates.add('http://localhost:1234/v1/models');  // LM Studio
+        candidates.add('http://localhost:8000/v1/models');  // vLLM
+        candidates.add('http://localhost:4000/v1/models');  // LiteLLM
+      }
     } catch {}
 
     if (baseWithProto.endsWith('/chat/completions')) {
@@ -837,6 +845,15 @@ ${userMessage}`;
       candidates.add(`${root}/v0/chat/completions`);
       candidates.add(`${root}/api/v1/chat/completions`);
       candidates.add(`${root}/chat/completions`);
+
+      // If probing localhost / 127.0.0.1, also probe standard local inference servers & mock server
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+        candidates.add('http://localhost:11435/v1/chat/completions'); // M.I.K.E. Mock LLM Server
+        candidates.add('http://localhost:11434/v1/chat/completions'); // Ollama
+        candidates.add('http://localhost:1234/v1/chat/completions');  // LM Studio
+        candidates.add('http://localhost:8000/v1/chat/completions');  // vLLM / LocalAI
+        candidates.add('http://localhost:4000/v1/chat/completions');  // LiteLLM Proxy
+      }
     } catch {}
 
     const logs: string[] = [];
@@ -878,6 +895,9 @@ ${userMessage}`;
 
       for (const variant of headerVariants) {
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2500);
+
           const res = await fetch(targetUrl, {
             method: 'POST',
             headers: variant.headers,
@@ -886,8 +906,10 @@ ${userMessage}`;
               messages: [{ role: 'user', content: 'hi' }],
               max_tokens: 5,
               stream: false
-            })
+            }),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
 
           let bodyText = '';
           try {

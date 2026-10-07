@@ -2529,7 +2529,8 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
                 });
               }
             } else {
-              cfgStatus.textContent = '✖ Failed. Check logs.';
+              const errSnippet = (msg.result && msg.result.details) ? msg.result.details.split('\n')[0] : 'Connection refused / unreachable';
+              cfgStatus.textContent = '✖ ' + errSnippet;
             }
             break;
           }
