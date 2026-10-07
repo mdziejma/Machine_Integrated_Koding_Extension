@@ -2249,7 +2249,7 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         if (nonSystem.length === 0) {
           const welcome = document.createElement('div');
           welcome.className = 'message assistant';
-          welcome.innerHTML = '<div class="message-text">Hello! I\\'m M.I.K.E., your autonomous coding assistant. How can I help you today?</div>';
+          welcome.innerHTML = '<div class="message-text">Hello! I am M.I.K.E., your autonomous coding assistant. How can I help you today?</div>';
           chatContainer.appendChild(welcome);
           return;
         }
@@ -2267,13 +2267,21 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
             userMsg.className = 'message user';
 
             let content = m.content || '';
-            const skillMatch = content.match(/\\[SPECIALIZED SKILL ACTIVATED: ([^\\]]+)\\]/);
-            if (skillMatch) {
+            let skillName = '';
+            const skillStart = content.indexOf('[SPECIALIZED SKILL ACTIVATED: ');
+            if (skillStart !== -1) {
+              const skillEnd = content.indexOf(']', skillStart);
+              if (skillEnd !== -1) {
+                skillName = content.slice(skillStart + 30, skillEnd).trim();
+                const afterBlock = content.slice(skillEnd + 1).replace(/^\n+/, '');
+                content = content.slice(0, skillStart) + afterBlock;
+              }
+            }
+            if (skillName) {
               const skillBadge = document.createElement('div');
               skillBadge.className = 'skill-badge';
-              skillBadge.innerHTML = '⚡ Skill: ' + escapeHtml(skillMatch[1]);
+              skillBadge.innerHTML = '⚡ Skill: ' + escapeHtml(skillName);
               userMsg.appendChild(skillBadge);
-              content = content.replace(/\\[SPECIALIZED SKILL ACTIVATED: [^\\]]+\\]\\n?/, '');
             }
 
             const textSpan = document.createElement('div');
