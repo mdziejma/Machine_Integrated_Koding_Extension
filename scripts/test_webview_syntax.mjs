@@ -1,26 +1,70 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-console.log('🧪 Starting Webview JavaScript Syntax Verification...');
+console.log('🧪 Starting Webview JavaScript Syntax & Runtime Initialization Verification...');
 
-const content = fs.readFileSync('src/webview/sidebarProvider.ts', 'utf8');
-const startTag = '<script nonce="${nonce}">';
-const endTag = '</script>';
-const startIndex = content.indexOf(startTag);
-const endIndex = content.indexOf(endTag, startIndex);
-
-if (startIndex === -1 || endIndex === -1) {
-  console.error('❌ Failed to locate <script> block in src/webview/sidebarProvider.ts');
+if (!fs.existsSync('media/sidebar.js')) {
+  console.error('❌ Failed to locate media/sidebar.js');
   process.exit(1);
 }
 
-const js = content.slice(startIndex + startTag.length, endIndex);
+const js = fs.readFileSync('media/sidebar.js', 'utf8');
 
 try {
+  // 1. Syntax Check
   new vm.Script(js);
-  console.log('✓ Webview JavaScript is 100% syntactically valid with zero runtime parsing errors!');
-  console.log('\n🎉 ALL WEBVIEW SYNTAX TESTS PASSED CLEANLY!\n');
+  console.log('✓ Webview JavaScript is 100% syntactically valid.');
+
+  // 2. Runtime Simulation Check (mocking DOM and acquireVsCodeApi to ensure zero ReferenceErrors)
+  const mockContext = {
+    acquireVsCodeApi: () => ({
+      postMessage: () => {},
+      getState: () => ({}),
+      setState: () => {}
+    }),
+    document: {
+      getElementById: (id) => ({
+        id,
+        classList: { add: () => {}, remove: () => {}, contains: () => false, toggle: () => {} },
+        addEventListener: () => {},
+        setAttribute: () => {},
+        getAttribute: () => null,
+        appendChild: () => {},
+        style: {},
+        value: '',
+        textContent: '',
+        innerHTML: ''
+      }),
+      querySelector: () => ({
+        addEventListener: () => {}
+      }),
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+      createElement: (tag) => ({
+        tagName: tag,
+        classList: { add: () => {}, remove: () => {}, contains: () => false },
+        addEventListener: () => {},
+        appendChild: () => {},
+        setAttribute: () => {},
+        getAttribute: () => null,
+        style: {},
+        textContent: '',
+        innerHTML: ''
+      })
+    },
+    window: {
+      addEventListener: () => {}
+    },
+    setTimeout: (fn) => fn(),
+    clearTimeout: () => {},
+    console: console
+  };
+
+  vm.createContext(mockContext);
+  vm.runInContext(js, mockContext);
+  console.log('✓ Webview JavaScript executed cleanly with zero ReferenceError / runtime initialization crashes!');
+  console.log('\n🎉 ALL WEBVIEW SYNTAX & RUNTIME TESTS PASSED CLEANLY!\n');
 } catch (err) {
-  console.error('❌ Syntax error detected in Webview JavaScript:', err);
+  console.error('❌ Error detected in Webview JavaScript:', err);
   process.exit(1);
 }
