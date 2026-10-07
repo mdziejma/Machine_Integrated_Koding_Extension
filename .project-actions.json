@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "archetype": "web",
+  "archetype": "vscode-extension",
   "actions": [
     {
       "id": "build",
@@ -15,8 +15,16 @@
       "label": "🧪 Run Tests",
       "text": "$(beaker) TEST",
       "command": "npm test",
-      "description": "Execute session persistence and inline transform test suites.",
-      "tooltip": "Execute session persistence and inline transform test suites."
+      "description": "Run session persistence and inline transform test suites.",
+      "tooltip": "Run session persistence and inline transform test suites."
+    },
+    {
+      "id": "mock_llm",
+      "label": "🤖 Start Mock LLM",
+      "text": "$(server-process) MOCK LLM",
+      "command": "npm run mock-server",
+      "description": "Launch zero-dependency local OpenAI-compatible mock LLM server (port 11435) for offline connectivity testing.",
+      "tooltip": "Launch zero-dependency local OpenAI-compatible mock LLM server (port 11435) for offline connectivity testing."
     },
     {
       "id": "package",
@@ -27,28 +35,12 @@
       "tooltip": "Compile and package standalone .vsix extension bundle."
     },
     {
-      "id": "purify",
-      "label": "✨ Purify Code",
-      "text": "$(zap) PURIFY",
-      "command": "poolside run /purify",
-      "description": "Clean trial debris and simplify active implementation.",
-      "tooltip": "Clean trial debris and simplify active implementation."
-    },
-    {
-      "id": "verify",
-      "label": "🛡️ Verify Syntax",
-      "text": "$(shield) VERIFY",
-      "command": "poolside run /verify",
-      "description": "Audit active files against ARCANA relics and archetypes.",
-      "tooltip": "Audit active files against ARCANA relics and archetypes."
-    },
-    {
-      "id": "publish",
-      "label": "🚀 Publish / Bundle",
-      "text": "$(rocket) PUBLISH",
-      "command": "npm run package:vsix",
-      "description": "Package standalone VSIX distribution artifact.",
-      "tooltip": "Package standalone VSIX distribution artifact."
+      "id": "publish_ovsx",
+      "label": "🌐 Publish Open VSX",
+      "text": "$(cloud-upload) OPEN-VSX",
+      "command": "npx -y ovsx publish *.vsix",
+      "description": "Publish packaged VSIX artifact to Open VSX Registry.",
+      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry."
     }
   ]
 }
