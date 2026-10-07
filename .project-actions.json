@@ -1,0 +1,54 @@
+{
+  "version": "2.0.0",
+  "archetype": "web",
+  "actions": [
+    {
+      "id": "build",
+      "label": "🔨 Build",
+      "text": "$(tools) BUILD",
+      "command": "npm run compile",
+      "description": "Compile TypeScript sources into ./out.",
+      "tooltip": "Compile TypeScript sources into ./out."
+    },
+    {
+      "id": "test",
+      "label": "🧪 Run Tests",
+      "text": "$(beaker) TEST",
+      "command": "npm test",
+      "description": "Execute session persistence and inline transform test suites.",
+      "tooltip": "Execute session persistence and inline transform test suites."
+    },
+    {
+      "id": "package",
+      "label": "📦 Package VSIX",
+      "text": "$(package) PACKAGE",
+      "command": "npm run package",
+      "description": "Compile and package standalone .vsix extension bundle.",
+      "tooltip": "Compile and package standalone .vsix extension bundle."
+    },
+    {
+      "id": "purify",
+      "label": "✨ Purify Code",
+      "text": "$(zap) PURIFY",
+      "command": "poolside run /purify",
+      "description": "Clean trial debris and simplify active implementation.",
+      "tooltip": "Clean trial debris and simplify active implementation."
+    },
+    {
+      "id": "verify",
+      "label": "🛡️ Verify Syntax",
+      "text": "$(shield) VERIFY",
+      "command": "poolside run /verify",
+      "description": "Audit active files against ARCANA relics and archetypes.",
+      "tooltip": "Audit active files against ARCANA relics and archetypes."
+    },
+    {
+      "id": "publish",
+      "label": "🚀 Publish / Bundle",
+      "text": "$(rocket) PUBLISH",
+      "command": "npm run package:vsix",
+      "description": "Package standalone VSIX distribution artifact.",
+      "tooltip": "Package standalone VSIX distribution artifact."
+    }
+  ]
+}

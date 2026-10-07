@@ -46,8 +46,8 @@ The Open VSX Registry is the primary open-source extension registry.
 You can publish directly using the `ovsx` CLI tool:
 
 ```bash
-# Using npm script:
-npx -y ovsx publish mike-koding-extension-1.5.0.vsix -p <YOUR_OPEN_VSX_PAT>
+# Using npx:
+npx -y ovsx publish mike-koding-extension-1.6.0.vsix -p <YOUR_OPEN_VSX_PAT>
 
 # Or using the package.json script:
 OVSX_PAT=<YOUR_OPEN_VSX_PAT> npm run publish:ovsx -- *.vsix -p $OVSX_PAT
@@ -74,7 +74,7 @@ Alternatively, you can manually upload the `.vsix` file through the [open-vsx.or
 ### Step 3: Publish via `@vscode/vsce` CLI
 ```bash
 # Publish using vsce
-npx -y @vscode/vsce publish --packagePath mike-koding-extension-1.5.0.vsix -p <YOUR_AZURE_PAT>
+npx -y @vscode/vsce publish --packagePath mike-koding-extension-1.6.0.vsix -p <YOUR_AZURE_PAT>
 
 # Or via npm script:
 npm run publish:vscode -- --packagePath *.vsix -p <YOUR_AZURE_PAT>
@@ -96,8 +96,8 @@ To publish a new version automatically:
 1. Update `version` in `package.json`.
 2. Commit and push your changes:
    ```bash
-   git commit -am "Release v1.5.0"
-   git tag v1.5.0
+   git commit -am "Release v1.6.0"
+   git tag v1.6.0
    git push origin main --tags
    ```
 3. GitHub Actions will automatically:
@@ -114,6 +114,6 @@ To publish a new version automatically:
 Users who do not have marketplace access can install the `.vsix` manually:
 
 ```bash
-code --install-extension mike-koding-extension-1.5.0.vsix --force
+code --install-extension mike-koding-extension-1.6.0.vsix --force
 ```
 Or via VS Code UI: `Extensions (Cmd+Shift+X)` $\rightarrow$ `...` (top right) $\rightarrow$ `Install from VSIX...`.

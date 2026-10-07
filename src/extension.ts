@@ -4,6 +4,7 @@ import { MikeSidebarProvider } from './webview/sidebarProvider.js';
 import { AgentClient } from './agent/client.js';
 import { SessionManager } from './agent/sessionManager.js';
 import { InlineTransformManager } from './editor/inlineTransform.js';
+import { EditorContextTracker } from './editor/editorTracker.js';
 
 /**
  * Extension Activation Entrypoint
@@ -12,6 +13,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Initialize Global Persistence & Secret Storage
   AgentClient.initializePersistence(context.secrets, context.globalState);
   SessionManager.initialize(context.workspaceState);
+  EditorContextTracker.initialize(context);
 
   // 1. Register the in-memory TextDocumentContentProvider for mike-diff scheme
   const diffRegistration = vscode.workspace.registerTextDocumentContentProvider(

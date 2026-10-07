@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import { OPENAI_TOOLS, executeTool } from '../tools/fileTools.js';
 import { SkillManager } from '../skills/skillManager.js';
+import { EditorContextTracker } from '../editor/editorTracker.js';
 
 export interface ToolCallFunction {
   name: string;
@@ -29,6 +31,198 @@ export interface AgentCallbacks {
   onToolComplete?: (toolCall: { id: string; name: string; result: string; isError: boolean }) => void;
   onStatusUpdate?: (status: string) => void;
   onSkillActivated?: (skillName: string) => void;
+}
+
+/**
+ * Safely captures output or active selection from the active VS Code terminal.
+ * Preserves the user's existing clipboard contents.
+ */
+export async function captureActiveTerminalOutput(
+  maxChars = 15000
+): Promise<{ name: string; content: string; isSelection: boolean }> {
+  const activeTerminal = vscode.window.activeTerminal || (vscode.window.terminals.length > 0 ? vscode.window.terminals[vscode.window.terminals.length - 1] : undefined);
+  if (!activeTerminal) {
+    return { name: 'Terminal', content: '', isSelection: false };
+  }
+
+  const terminalName = activeTerminal.name || 'Terminal';
+  let terminalContent = '';
+  let isSelection = false;
+  let priorClipboard = '';
+
+  try {
+    priorClipboard = await vscode.env.clipboard.readText();
+  } catch {
+    // Clipboard read may fail in restricted environments
+  }
+
+  const probe = `__MIKE_TERM_PROBE_${Date.now()}_${Math.random().toString(36).slice(2)}__`;
+
+  try {
+    // 1. First probe if the user has an active manual selection highlighted in the terminal
+    await vscode.env.clipboard.writeText(probe);
+    await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
+    let copied = await vscode.env.clipboard.readText();
+
+    if (copied && copied !== probe && copied.trim().length > 0) {
+      terminalContent = copied;
+      isSelection = true;
+    } else {
+      // 2. If no selection exists, select entire terminal buffer, copy, and clear selection
+      await vscode.commands.executeCommand('workbench.action.terminal.selectAll');
+      await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
+      await vscode.commands.executeCommand('workbench.action.terminal.clearSelection');
+      copied = await vscode.env.clipboard.readText();
+
+      if (copied && copied !== probe && copied.trim().length > 0) {
+        terminalContent = copied;
+        isSelection = false;
+      }
+    }
+  } catch {
+    // Fallback if terminal commands fail
+  } finally {
+    // Always restore the user's prior clipboard content
+    try {
+      await vscode.env.clipboard.writeText(priorClipboard);
+    } catch {
+      // ignore
+    }
+  }
+
+  let formattedContent = terminalContent.trim();
+  if (formattedContent.length > maxChars) {
+    // For terminal buffers, the most recent output is at the bottom, so keep the tail
+    formattedContent = '...[Preceding terminal output truncated]\n' + formattedContent.slice(-maxChars);
+  }
+
+  return {
+    name: terminalName,
+    content: formattedContent,
+    isSelection
+  };
+}
+
+/**
+ * Captures active compiler, TypeScript, and linter problems/diagnostics across the workspace.
+ */
+export function captureActiveProblems(maxProblems = 25): { count: number; summary: string } {
+  const allDiags = vscode.languages.getDiagnostics();
+  const problems: Array<{ file: string; line: number; col: number; severity: string; message: string; source: string }> = [];
+
+  const activeUri = vscode.window.activeTextEditor?.document.uri.toString();
+
+  const sortedEntries = [...allDiags].sort((a, b) => {
+    if (activeUri) {
+      if (a[0].toString() === activeUri) return -1;
+      if (b[0].toString() === activeUri) return 1;
+    }
+    return 0;
+  });
+
+  for (const [uri, diags] of sortedEntries) {
+    if (uri.scheme !== 'file') continue;
+    const relPath = vscode.workspace.asRelativePath(uri);
+    if (relPath.includes('node_modules/') || relPath.includes('.git/') || relPath.includes('out/') || relPath.includes('dist/')) {
+      continue;
+    }
+
+    for (const d of diags) {
+      if (d.severity === vscode.DiagnosticSeverity.Error || d.severity === vscode.DiagnosticSeverity.Warning) {
+        const severityStr = d.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' : 'WARNING';
+        problems.push({
+          file: relPath,
+          line: d.range.start.line + 1,
+          col: d.range.start.character + 1,
+          severity: severityStr,
+          message: d.message,
+          source: d.source || 'compiler'
+        });
+        if (problems.length >= maxProblems) break;
+      }
+    }
+    if (problems.length >= maxProblems) break;
+  }
+
+  if (problems.length === 0) {
+    return {
+      count: 0,
+      summary: '(No compiler or linter diagnostics/problems found in active workspace)'
+    };
+  }
+
+  const lines = problems.map(
+    (p) => `- [${p.severity}] ${p.file}:${p.line}:${p.col} (${p.source}): ${p.message}`
+  );
+
+  return {
+    count: problems.length,
+    summary: lines.join('\n')
+  };
+}
+
+/**
+ * Determines estimated model context window capacity.
+ */
+export function getModelContextLimit(modelName?: string): number {
+  if (!modelName) return 128000;
+  const m = modelName.toLowerCase();
+
+  // 1M - 2M tokens
+  if (m.includes('gemini-1.5-pro') || m.includes('gemini-2.0-pro') || m.includes('gemini-2.5-pro')) {
+    return 2000000;
+  }
+  if (m.includes('gemini') || m.includes('gemini-1.5') || m.includes('gemini-2.0') || m.includes('gemini-2.5') || m.includes('gemini-3')) {
+    return 1000000;
+  }
+
+  // 256k tokens
+  if (m.includes('codestral-25') || m.includes('mistral-large-2411') || m.includes('yi-lightning')) {
+    return 256000;
+  }
+
+  // 200k tokens
+  if (m.includes('claude-3') || m.includes('claude-3-5') || m.includes('claude-3-7') || m.includes('sonnet') || m.includes('opus') || m.includes('haiku')) {
+    return 200000;
+  }
+  if (m.includes('o1') || m.includes('o3') || m.includes('o4') || m.includes('gpt-4.5') || m.includes('gpt-5')) {
+    return 200000;
+  }
+
+  // 128k - 131k tokens (Modern default for OpenAI, DeepSeek, Qwen, Llama 3, Mistral)
+  if (m.includes('deepseek') || m.includes('qwen') || m.includes('gpt-4o') || m.includes('llama-3') || m.includes('llama3') || m.includes('mistral') || m.includes('codestral') || m.includes('command-r') || m.includes('grok') || m.includes('phi-4') || m.includes('phi-3.5')) {
+    return 128000;
+  }
+
+  // 32k - 64k tokens
+  if (m.includes('llama-2') || m.includes('qwen1.5') || m.includes('deepseek-coder-6.7b')) {
+    return 32768;
+  }
+
+  // 16k tokens
+  if (m.includes('gpt-3.5-turbo')) {
+    return 16385;
+  }
+
+  // 8k tokens
+  if (m.includes('gemma-2') || m.includes('gpt-4-32k') === false && m.includes('gpt-4-') === false && m.includes('gpt-4')) {
+    return 8192;
+  }
+
+  // Default fallback for modern coding LLMs
+  return 128000;
+}
+
+/**
+ * Fast zero-dependency token count estimator (~4 chars per token).
+ */
+export function estimateMessageTokens(messages: ChatMessage[]): number {
+  let chars = 0;
+  for (const m of messages) {
+    if (m.content) chars += m.content.length;
+    if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
+  }
+  return Math.max(0, Math.round(chars / 4));
 }
 
 export class AgentClient {
@@ -78,6 +272,8 @@ CRITICAL OPERATIONAL RULES:
     commandMode?: 'prompt' | 'auto' | 'deny';
     temperature?: number;
     maxTokens?: number;
+    autoContinue?: boolean;
+    customAgentsMdPath?: string;
   }): Promise<void> {
     if (config.baseUrl && config.baseUrl.trim()) {
       const cleanUrl = config.baseUrl.trim();
@@ -102,6 +298,12 @@ CRITICAL OPERATIONAL RULES:
     if (config.maxTokens !== undefined) {
       await this.globalState?.update('mike.maxTokens', Number(config.maxTokens));
     }
+    if (config.autoContinue !== undefined) {
+      await this.globalState?.update('mike.autoContinue', Boolean(config.autoContinue));
+    }
+    if (config.customAgentsMdPath !== undefined) {
+      await this.globalState?.update('mike.customAgentsMdPath', config.customAgentsMdPath.trim());
+    }
     if (config.apiKey !== undefined && config.apiKey.trim() !== '') {
       await this.secretStorage?.store('mike.apiKey', config.apiKey.trim());
     }
@@ -123,6 +325,12 @@ CRITICAL OPERATIONAL RULES:
       }
       if (config.maxTokens !== undefined) {
         await vsConfig.update('maxTokens', Number(config.maxTokens), vscode.ConfigurationTarget.Global);
+      }
+      if (config.autoContinue !== undefined) {
+        await vsConfig.update('autoContinue', Boolean(config.autoContinue), vscode.ConfigurationTarget.Global);
+      }
+      if (config.customAgentsMdPath !== undefined) {
+        await vsConfig.update('customAgentsMdPath', config.customAgentsMdPath.trim(), vscode.ConfigurationTarget.Global);
       }
     } catch {
       // Ignored if global settings.json is write-protected; globalState & secretStorage handle it
@@ -269,6 +477,8 @@ CRITICAL OPERATIONAL RULES:
     commandMode: 'prompt' | 'auto' | 'deny';
     temperature: number;
     maxTokens: number;
+    autoContinue: boolean;
+    customAgentsMdPath: string;
   }> {
     const config = vscode.workspace.getConfiguration('mike');
 
@@ -322,53 +532,126 @@ CRITICAL OPERATIONAL RULES:
     const configMaxTokens = config.get<number>('maxTokens');
     const maxTokens = storedMaxTokens !== undefined ? storedMaxTokens : (configMaxTokens !== undefined ? configMaxTokens : 8192);
 
-    return { baseUrl, apiKey, model, commandMode, temperature, maxTokens };
+    // 7. Auto-Continue priority: globalState -> settings -> false (Default: Step-by-Step with user confirmation)
+    const storedAutoContinue = this.globalState?.get<boolean>('mike.autoContinue');
+    const configAutoContinue = config.get<boolean>('autoContinue');
+    const autoContinue =
+      storedAutoContinue !== undefined
+        ? storedAutoContinue
+        : configAutoContinue !== undefined
+        ? configAutoContinue
+        : false;
+
+    // 8. Custom AGENTS.md Path priority: globalState -> settings -> ''
+    const customAgentsMdPath =
+      this.globalState?.get<string>('mike.customAgentsMdPath') ||
+      config.get<string>('customAgentsMdPath') ||
+      '';
+
+    return { baseUrl, apiKey, model, commandMode, temperature, maxTokens, autoContinue, customAgentsMdPath };
   }
 
   /**
    * Dynamically builds the system prompt by aggregating:
    * 1. Core M.I.K.E. directives
-   * 2. Global AGENTS.md (~/.config/poolside/AGENTS.md or ~/.config/mike/AGENTS.md)
-   * 3. Workspace AGENTS.md / MIKE.md (.agent/AGENTS.md, AGENTS.md, MIKE.md, CLAUDE.md)
+   * 2. Global AGENTS.md (~/.config/poolside/AGENTS.md, ~/.config/mike/AGENTS.md, or customAgentsMdPath)
+   * 3. Global ARCANA Breadcrumbs (ARCANA_BREADCRUMBS.json)
+   * 4. Workspace AGENTS.md / MIKE.md (.agent/AGENTS.md, AGENTS.md, MIKE.md, CLAUDE.md)
    */
   public static async buildSystemPrompt(): Promise<string> {
     const promptParts: string[] = [this.SYSTEM_PROMPT];
     const userHome = os.homedir();
     const MAX_DIRECTIVE_CHARS = 25000;
 
+    const { customAgentsMdPath } = await this.getConfig();
+
     // 1. Check Global AGENTS.md
-    const globalAgentsPaths = [
+    const globalAgentsPaths: string[] = [];
+    if (customAgentsMdPath && customAgentsMdPath.trim()) {
+      let resolved = customAgentsMdPath.trim();
+      if (resolved.startsWith('~')) {
+        resolved = path.join(userHome, resolved.slice(1).replace(/^[\\/]+/, ''));
+      }
+      globalAgentsPaths.push(resolved);
+    }
+
+    globalAgentsPaths.push(
       path.join(userHome, '.config', 'poolside', 'AGENTS.md'),
       path.join(userHome, '.config', 'mike', 'AGENTS.md'),
-      path.join(userHome, '.poolside', 'AGENTS.md')
-    ];
+      path.join(userHome, '.poolside', 'AGENTS.md'),
+      path.join(userHome, '.gemini', 'config', 'AGENTS.md')
+    );
+
+    let loadedGlobalDir: string | null = null;
 
     for (const p of globalAgentsPaths) {
       try {
-        const fileUri = vscode.Uri.file(p);
-        const bytes = await vscode.workspace.fs.readFile(fileUri);
-        let text = Buffer.from(bytes).toString('utf8').trim();
+        let text = '';
+        if (fs.existsSync(p)) {
+          text = await fs.promises.readFile(p, 'utf8');
+        } else {
+          const fileUri = vscode.Uri.file(p);
+          const bytes = await vscode.workspace.fs.readFile(fileUri);
+          text = Buffer.from(bytes).toString('utf8');
+        }
+        text = text.trim();
         if (text) {
           if (text.length > MAX_DIRECTIVE_CHARS) {
             text = text.slice(0, MAX_DIRECTIVE_CHARS) + '\n...[Directives truncated for context safety]';
           }
           promptParts.push(`\n[GLOBAL AGENT OPERATIONAL DIRECTIVES (${path.basename(path.dirname(p))}/AGENTS.md)]\n${text}`);
+          loadedGlobalDir = path.dirname(p);
           break;
         }
       } catch {}
     }
 
-    // 2. Check Workspace AGENTS.md / MIKE.md / CLAUDE.md / .cursorrules
+    // 2. Check for Global ARCANA Breadcrumbs (ARCANA_BREADCRUMBS.json)
+    const candidateBreadcrumbDirs: string[] = [
+      loadedGlobalDir || '',
+      path.join(userHome, '.config', 'poolside'),
+      path.join(userHome, '.config', 'mike'),
+      path.join(userHome, '.poolside')
+    ].filter(Boolean);
+
+    for (const bDir of candidateBreadcrumbDirs) {
+      const candidateFiles = [
+        path.join(bDir, 'ARCANA_BREADCRUMBS.json'),
+        path.join(bDir, 'BREADCRUMBS.json')
+      ];
+      let loaded = false;
+      for (const bcPath of candidateFiles) {
+        try {
+          if (fs.existsSync(bcPath)) {
+            const bcText = (await fs.promises.readFile(bcPath, 'utf8')).trim();
+            if (bcText) {
+              promptParts.push(`\n[GLOBAL ENVIRONMENT & ARCANA BREADCRUMBS (${path.basename(bcPath)})]\n${bcText}`);
+              loaded = true;
+              break;
+            }
+          }
+        } catch {}
+      }
+      if (loaded) break;
+    }
+
+    // 3. Check Workspace AGENTS.md / MIKE.md / CLAUDE.md / .cursorrules / GEMINI.md / copilot
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (workspaceFolders) {
       for (const folder of workspaceFolders) {
         const candidateWorkspaceFiles = [
           vscode.Uri.joinPath(folder.uri, 'AGENTS.md'),
           vscode.Uri.joinPath(folder.uri, '.agent', 'AGENTS.md'),
+          vscode.Uri.joinPath(folder.uri, '.agents', 'rules', 'AGENTS.md'),
+          vscode.Uri.joinPath(folder.uri, 'GEMINI.md'),
           vscode.Uri.joinPath(folder.uri, 'MIKE.md'),
           vscode.Uri.joinPath(folder.uri, '.mike', 'AGENTS.md'),
+          vscode.Uri.joinPath(folder.uri, '.mike', 'rules.md'),
           vscode.Uri.joinPath(folder.uri, 'CLAUDE.md'),
-          vscode.Uri.joinPath(folder.uri, '.cursorrules')
+          vscode.Uri.joinPath(folder.uri, '.cursorrules'),
+          vscode.Uri.joinPath(folder.uri, '.cursor', 'rules'),
+          vscode.Uri.joinPath(folder.uri, '.github', 'copilot-instructions.md'),
+          vscode.Uri.joinPath(folder.uri, '.windsurfrules')
         ];
 
         for (const fUri of candidateWorkspaceFiles) {
@@ -397,51 +680,61 @@ CRITICAL OPERATIONAL RULES:
     let trimmed = prompt.trim();
 
     // Check for @editor / @selection mentions and inject active editor context
-    const activeEditor = vscode.window.activeTextEditor;
-    if (activeEditor) {
-      const doc = activeEditor.document;
-      const relPath = vscode.workspace.asRelativePath(doc.uri);
+    if (trimmed.includes('@selection') || trimmed.includes('@editor')) {
+      const editorCtx = EditorContextTracker.captureContext();
+      if (editorCtx) {
+        if (trimmed.includes('@selection')) {
+          const maxSelChars = 15000;
+          let selText = editorCtx.selectedText;
+          if (selText.length > maxSelChars) {
+            selText = selText.slice(0, maxSelChars) + '\n...[Selection truncated]';
+          }
+          const content = editorCtx.hasSelection
+            ? (selText || '(Empty selection)')
+            : (selText ? `(Cursor on Line ${editorCtx.startLine})\n${selText}` : `(Cursor on Line ${editorCtx.startLine})`);
+          const lineLabel = editorCtx.hasSelection && editorCtx.startLine !== editorCtx.endLine
+            ? `Lines ${editorCtx.startLine}-${editorCtx.endLine}`
+            : `Line ${editorCtx.startLine}`;
+          const contextBlock = `\n\n[ACTIVE SELECTION: ${editorCtx.relPath} (${lineLabel})]\n\`\`\`\n${content}\n\`\`\``;
+          trimmed = trimmed.replace(/@selection/g, '').trim() + contextBlock;
+        }
 
-      if (trimmed.includes('@selection')) {
-        const selection = activeEditor.selection;
-        const selectedText = doc.getText(selection);
-        const startLine = selection.start.line + 1;
-        const endLine = selection.end.line + 1;
-        const contextBlock = `\n\n[ACTIVE SELECTION: ${relPath} (Lines ${startLine}-${endLine})]\n\`\`\`\n${selectedText || '(No text selected)'}\n\`\`\``;
-        trimmed = trimmed.replace(/@selection/g, '').trim() + contextBlock;
+        if (trimmed.includes('@editor')) {
+          const fullDocText = editorCtx.fullText;
+          const maxDocChars = 15000;
+          const docSlice = fullDocText.length > maxDocChars ? fullDocText.slice(0, maxDocChars) + '\n...[Content truncated]' : fullDocText;
+          const contextBlock = `\n\n[ACTIVE FILE: ${editorCtx.relPath}]\n\`\`\`\n${docSlice}\n\`\`\``;
+          trimmed = trimmed.replace(/@editor/g, '').trim() + contextBlock;
+        }
+      } else {
+        if (trimmed.includes('@selection')) {
+          const contextBlock = `\n\n[ACTIVE SELECTION]\n\`\`\`\n(No active editor or selection found. Open a file to provide context)\n\`\`\``;
+          trimmed = trimmed.replace(/@selection/g, '').trim() + contextBlock;
+        }
+        if (trimmed.includes('@editor')) {
+          const contextBlock = `\n\n[ACTIVE FILE]\n\`\`\`\n(No active editor file found. Open a file to provide context)\n\`\`\``;
+          trimmed = trimmed.replace(/@editor/g, '').trim() + contextBlock;
+        }
       }
-      if (trimmed.includes('@editor')) {
-        const fullDocText = doc.getText();
-        const maxDocChars = 15000;
-        const docSlice = fullDocText.length > maxDocChars ? fullDocText.slice(0, maxDocChars) + '\n...[Content truncated]' : fullDocText;
-        const contextBlock = `\n\n[ACTIVE FILE: ${relPath}]\n\`\`\`\n${docSlice}\n\`\`\``;
-        trimmed = trimmed.replace(/@editor/g, '').trim() + contextBlock;
-      }
+    }
+
+    // Check for @problems / @diagnostics / @errors mentions and inject compiler/linter diagnostics
+    if (trimmed.includes('@problems') || trimmed.includes('@diagnostics') || trimmed.includes('@errors')) {
+      const { count, summary } = captureActiveProblems(25);
+      const contextBlock = `\n\n[ACTIVE COMPILER & LINTER PROBLEMS (${count} reported)]\n\`\`\`\n${summary}\n\`\`\``;
+      trimmed = trimmed
+        .replace(/@problems/g, '')
+        .replace(/@diagnostics/g, '')
+        .replace(/@errors/g, '')
+        .trim() + contextBlock;
     }
 
     // Check for @terminal / @output mentions and inject terminal context
     if (trimmed.includes('@terminal') || trimmed.includes('@output')) {
-      const activeTerminal = vscode.window.activeTerminal;
-      const terminalName = activeTerminal ? activeTerminal.name : 'Terminal';
-      let terminalContent = '';
-
-      try {
-        const priorClipboard = await vscode.env.clipboard.readText();
-        await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
-        const copied = await vscode.env.clipboard.readText();
-        if (copied && copied !== priorClipboard) {
-          terminalContent = copied;
-        }
-      } catch {
-        // Fallback if terminal copy is unsupported
-      }
-
-      const maxChars = 15000;
-      const termSlice = terminalContent.length > maxChars
-        ? terminalContent.slice(0, maxChars) + '\n...[Content truncated]'
-        : (terminalContent || '(No active terminal selection captured. Please highlight the desired terminal output text with your mouse or cursor before using @terminal)');
-
-      const contextBlock = `\n\n[ACTIVE TERMINAL / OUTPUT: ${terminalName}]\n\`\`\`\n${termSlice}\n\`\`\``;
+      const { name, content, isSelection } = await captureActiveTerminalOutput(15000);
+      const label = isSelection ? `ACTIVE TERMINAL SELECTION: ${name}` : `ACTIVE TERMINAL OUTPUT: ${name}`;
+      const termBody = content || '(No active terminal output or selection captured. Ensure a terminal with output is open)';
+      const contextBlock = `\n\n[${label}]\n\`\`\`\n${termBody}\n\`\`\``;
       trimmed = trimmed.replace(/@terminal/g, '').replace(/@output/g, '').trim() + contextBlock;
     }
 
@@ -935,7 +1228,7 @@ ${userMessage}`;
         let isError = false;
 
         try {
-          toolOutput = await executeTool(toolCall.function.name, toolCall.function.arguments);
+          toolOutput = await executeTool(toolCall.function.name, toolCall.function.arguments, abortSignal, toolCall.id);
         } catch (err: unknown) {
           isError = true;
           toolOutput = `Tool execution error: ${(err as Error).message}`;

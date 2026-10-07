@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
-import { AgentClient, ChatMessage } from '../agent/client.js';
+import {
+  AgentClient,
+  ChatMessage,
+  captureActiveTerminalOutput,
+  estimateMessageTokens,
+  getModelContextLimit
+} from '../agent/client.js';
 import { SkillManager, SkillMetadata } from '../skills/skillManager.js';
 import { CheckpointManager } from '../tools/checkpointManager.js';
 import { SessionManager } from '../agent/sessionManager.js';
+import { killRunningToolProcess } from '../tools/fileTools.js';
 
 export class MikeSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'mike-assistant.sidebar';
@@ -69,6 +76,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
             thread: activeThread,
             threads: SessionManager.getAllThreads()
           });
+          await this._sendTokenUpdate();
           break;
         }
         case 'getConfig': {
@@ -76,6 +84,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
           this._postMessage({ type: 'configLoaded', config });
           const knownModels = await AgentClient.getKnownModels();
           this._postMessage({ type: 'modelsLoaded', models: knownModels });
+          await this._sendTokenUpdate();
           break;
         }
         case 'getModels': {
@@ -109,6 +118,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
             threads: SessionManager.getAllThreads()
           });
           this._postMessage({ type: 'checkpointsUpdated', files: [] });
+          await this._sendTokenUpdate();
           break;
         }
         case 'switchThread': {
@@ -120,6 +130,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
               thread,
               threads: SessionManager.getAllThreads()
             });
+            await this._sendTokenUpdate();
           }
           break;
         }
@@ -132,6 +143,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
             thread: active,
             threads: SessionManager.getAllThreads()
           });
+          await this._sendTokenUpdate();
           break;
         }
         case 'saveConfig': {
@@ -177,6 +189,12 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
             this._abortController.abort();
             this._abortController = null;
           }
+          killRunningToolProcess();
+          break;
+        }
+        case 'killRunningTool': {
+          MikeSidebarProvider.log(`Killing running tool process: ${data.toolId || 'all'}`);
+          killRunningToolProcess(data.toolId);
           break;
         }
         case 'clear': {
@@ -190,6 +208,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
           this._postMessage({ type: 'cleared' });
           this._postMessage({ type: 'checkpointsUpdated', files: [] });
           this._postMessage({ type: 'threadsUpdated', threads: SessionManager.getAllThreads() });
+          await this._sendTokenUpdate();
           MikeSidebarProvider.log('Conversation history cleared.');
           break;
         }
@@ -198,32 +217,15 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'insertTerminal': {
-          const activeTerminal = vscode.window.activeTerminal;
-          let content = '';
-          try {
-            const priorClipboard = await vscode.env.clipboard.readText();
-            await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
-            const copied = await vscode.env.clipboard.readText();
-            if (copied && copied !== priorClipboard) {
-              content = copied;
-            }
-          } catch {
-            // fallback
-          }
+          const { name, content } = await captureActiveTerminalOutput(10000);
 
-          const termName = activeTerminal ? activeTerminal.name : 'Terminal';
-          const maxChars = 10000;
-          const textSnippet = content && content.trim()
-            ? (content.length > maxChars ? content.slice(0, maxChars) + '\n...[truncated]' : content.trim())
-            : '';
-
-          if (textSnippet) {
+          if (content) {
             this._postMessage({
               type: 'insertText',
-              text: `\n\`\`\`terminal [${termName}]\n${textSnippet}\n\`\`\`\n`
+              text: `\n\`\`\`terminal [${name}]\n${content}\n\`\`\`\n`
             });
           } else {
-            vscode.window.showInformationMessage('💡 Tip: Highlight text in the Terminal or copy output to paste into M.I.K.E.');
+            vscode.window.showInformationMessage('💡 Tip: Open a terminal with output or highlight text in the terminal.');
             this._postMessage({
               type: 'insertTag',
               tag: '@terminal '
@@ -235,6 +237,22 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private async _sendTokenUpdate(): Promise<void> {
+    try {
+      const usedTokens = estimateMessageTokens(this._history);
+      const config = await AgentClient.getConfig();
+      const maxTokens = getModelContextLimit(config.model);
+      this._postMessage({
+        type: 'tokenUpdate',
+        usedTokens,
+        maxTokens,
+        model: config.model || 'Default'
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   private async _handleSaveConfig(config: {
     baseUrl?: string;
     apiKey?: string;
@@ -242,6 +260,8 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
     commandMode?: 'prompt' | 'auto' | 'deny';
     temperature?: number;
     maxTokens?: number;
+    autoContinue?: boolean;
+    customAgentsMdPath?: string;
   }): Promise<void> {
     if (!config) return;
 
@@ -250,6 +270,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       const savedConfig = await AgentClient.getConfig();
       this._postMessage({ type: 'configSaved', success: true });
       this._postMessage({ type: 'configLoaded', config: savedConfig });
+      await this._sendTokenUpdate();
     } catch (err: any) {
       this._postMessage({ type: 'configSaved', success: false, error: err.message });
     }
@@ -335,6 +356,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       });
 
       this._history.push({ role: 'user', content: expandedPrompt });
+      await this._sendTokenUpdate();
 
       this._history = await AgentClient.runAgentLoop(
         this._history,
@@ -379,6 +401,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       this._abortController = null;
       this._postMessage({ type: 'setRunningState', isRunning: false });
       this._postMessage({ type: 'statusUpdate', status: 'Ready' });
+      await this._sendTokenUpdate();
     }
   }
 
@@ -539,6 +562,62 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
     @keyframes scan {
       0% { left: -40%; }
       100% { left: 100%; }
+    }
+
+    .context-meter-bar {
+      padding: 4px 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+
+    .context-meter-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      line-height: 1.2;
+    }
+
+    .token-model-badge {
+      font-size: 9px;
+      opacity: 0.8;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 3px;
+      max-width: 130px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .context-meter-track {
+      height: 3px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .context-meter-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.3s ease, background-color 0.3s ease;
+    }
+
+    .context-meter-fill.warning {
+      background: #d29922;
+    }
+
+    .context-meter-fill.danger {
+      background: #f85149;
     }
 
     .header-actions {
@@ -809,6 +888,39 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       display: block;
     }
 
+    .tool-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tool-kill-btn {
+      background: rgba(248, 81, 73, 0.12);
+      border: 1px solid rgba(248, 81, 73, 0.45);
+      color: #f85149;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      line-height: 1.3;
+      font-family: inherit;
+      transition: all 0.15s ease;
+    }
+
+    .tool-kill-btn:hover {
+      background: rgba(248, 81, 73, 0.28);
+      border-color: #f85149;
+      color: #ff7b72;
+    }
+
+    .tool-badge.completed .tool-kill-btn,
+    .tool-badge.error .tool-kill-btn {
+      display: none !important;
+    }
+
     .error-banner {
       background: rgba(248, 81, 73, 0.15);
       border: 1px solid var(--error);
@@ -955,6 +1067,108 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
       color: var(--accent);
     }
 
+    .context-chip.auto-continue-toggle {
+      margin-left: auto;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: all 0.2s ease;
+      font-size: 10.5px;
+    }
+
+    .context-chip.auto-continue-toggle.active {
+      background: rgba(227, 179, 65, 0.2);
+      border-color: #e3b341;
+      color: #e3b341;
+      font-weight: 600;
+      box-shadow: 0 0 6px rgba(227, 179, 65, 0.3);
+      opacity: 1;
+    }
+
+    .context-tooltip-popover {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 8px;
+      background: var(--vscode-editorHoverWidget-background, #1e1e1e);
+      color: var(--vscode-editorHoverWidget-foreground, #cccccc);
+      border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      line-height: 1.4;
+      pointer-events: none;
+      z-index: 99999;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+      max-width: 270px;
+      min-width: 140px;
+      display: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+    }
+
+    .context-tooltip-popover.visible {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .context-tooltip-popover .tooltip-title {
+      font-weight: 600;
+      color: var(--vscode-editorHoverWidget-foreground, #ffffff);
+      margin-bottom: 2px;
+      font-size: 11.5px;
+    }
+
+    .context-tooltip-popover .tooltip-desc {
+      color: var(--vscode-descriptionForeground, #a6a6a6);
+      font-size: 10.5px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--badge-bg);
+      transition: .2s;
+      border-radius: 18px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: #e3b341;
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(14px);
+    }
+
+>>>>>>> Stashed changes
     .autocomplete-menu {
       position: absolute;
       bottom: calc(100% + 4px);
@@ -1197,6 +1411,17 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
   </div>
   <div id="activity-scanner" class="activity-bar-scanner"></div>
 
+  <!-- Real-Time Context Token Meter & Model Capacity Gauge -->
+  <div id="context-meter-bar" class="context-meter-bar" title="Session Context Window Usage">
+    <div class="context-meter-info">
+      <span id="token-meter-label">🧠 Context: 0 / 128k (0%)</span>
+      <span id="token-model-badge" class="token-model-badge">Default</span>
+    </div>
+    <div class="context-meter-track">
+      <div id="context-meter-fill" class="context-meter-fill" style="width: 0%;"></div>
+    </div>
+  </div>
+
   <!-- In-Sidebar Thread History Drawer -->
   <div id="history-panel" class="history-panel">
     <div class="history-panel-header">
@@ -1215,6 +1440,11 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
     <div class="config-field">
       <label class="config-label">API Key</label>
       <input id="cfg-api-key" class="config-input" type="password" placeholder="Paste API Key here (or leave blank for local models)..." />
+    </div>
+    <div class="config-field">
+      <label class="config-label">Global AGENTS.md / Directives Path</label>
+      <input id="cfg-agents-path" class="config-input" type="text" placeholder="~/.config/poolside/AGENTS.md (auto-detected if blank)" />
+      <span style="font-size: 10px; opacity: 0.65;">Root AGENTS.md &amp; ARCANA breadcrumbs. Auto-detects ~/.config/poolside/AGENTS.md if empty.</span>
     </div>
     <div class="config-field">
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1285,9 +1515,17 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
     <div id="autocomplete-menu" class="autocomplete-menu"></div>
 
     <div class="context-bar">
-      <button id="add-editor-btn" class="context-chip" type="button" data-tag="@editor" title="Insert @editor to attach active file to prompt">📄 @editor</button>
-      <button id="add-selection-btn" class="context-chip" type="button" data-tag="@selection" title="Insert @selection to attach highlighted lines to prompt">✂️ @selection</button>
-      <button id="add-terminal-btn" class="context-chip" type="button" data-tag="@terminal" title="Insert @terminal to attach active terminal output or selection to prompt">📟 @terminal</button>
+      <button id="add-editor-btn" class="context-chip" type="button" data-tag="@editor" data-tooltip-title="📄 @editor" data-tooltip-desc="Injects the entire contents of your active editor file into the prompt.">📄 @editor</button>
+      <button id="add-selection-btn" class="context-chip" type="button" data-tag="@selection" data-tooltip-title="✂️ @selection" data-tooltip-desc="Injects your highlighted lines of code (or current line) into the prompt.">✂️ @selection</button>
+      <button id="add-terminal-btn" class="context-chip" type="button" data-tag="@terminal" data-tooltip-title="📟 @terminal" data-tooltip-desc="Injects recent terminal console output (or selected terminal text) into the prompt.">📟 @terminal</button>
+      <button id="add-problems-btn" class="context-chip" type="button" data-tag="@problems" data-tooltip-title="⚠️ @problems" data-tooltip-desc="Injects active compiler errors, linter diagnostics, and TypeScript issues into the prompt.">⚠️ @problems</button>
+      <button id="auto-continue-toggle-btn" class="context-chip auto-continue-toggle" type="button" data-tooltip-title="⚡ Auto-Continue: OFF" data-tooltip-desc="Toggle autonomous multi-step execution without waiting for manual confirmation per tool.">
+        <span id="auto-continue-icon">⚡</span> <span id="auto-continue-label">Auto-Continue: OFF</span>
+      </button>
+    </div>
+    <div id="context-tooltip" class="context-tooltip-popover">
+      <div id="tooltip-title" class="tooltip-title"></div>
+      <div id="tooltip-desc" class="tooltip-desc"></div>
     </div>
 
     <div class="textarea-wrapper">
@@ -1336,6 +1574,8 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       const cfgTempVal = document.getElementById('cfg-temp-val');
       const cfgMaxTokens = document.getElementById('cfg-max-tokens');
       const cfgCmdMode = document.getElementById('cfg-cmd-mode');
+      const cfgAutoContinue = document.getElementById('cfg-auto-continue');
+      const cfgAgentsPath = document.getElementById('cfg-agents-path');
       const cfgSaveBtn = document.getElementById('cfg-save-btn');
       const cfgTestBtn = document.getElementById('cfg-test-btn');
       const cfgStatus = document.getElementById('cfg-status');
@@ -1345,6 +1585,64 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       const statusDot = document.getElementById('status-dot');
       const autocompleteMenu = document.getElementById('autocomplete-menu');
 
+      function updateAutoContinueUI(isEnabled) {
+        const active = Boolean(isEnabled);
+        if (cfgAutoContinue) {
+          cfgAutoContinue.checked = active;
+        }
+        if (autoContinueToggleBtn && autoContinueLabel) {
+          if (active) {
+            autoContinueToggleBtn.classList.add('active');
+            autoContinueLabel.textContent = 'Auto-Continue: ON';
+            autoContinueToggleBtn.setAttribute('data-tooltip-title', '⚡ Auto-Continue: ON');
+            autoContinueToggleBtn.setAttribute('data-tooltip-desc', 'Autonomous loop active: executes multi-turn tool steps without waiting for confirmation.');
+          } else {
+            autoContinueToggleBtn.classList.remove('active');
+            autoContinueLabel.textContent = 'Auto-Continue: OFF';
+            autoContinueToggleBtn.setAttribute('data-tooltip-title', '⚡ Auto-Continue: OFF');
+            autoContinueToggleBtn.setAttribute('data-tooltip-desc', 'Click to toggle autonomous mode (Default: OFF - wait for human approval between steps).');
+          }
+        }
+      }
+
+      if (autoContinueToggleBtn) {
+        autoContinueToggleBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const nextState = cfgAutoContinue ? !cfgAutoContinue.checked : false;
+          updateAutoContinueUI(nextState);
+
+          const baseUrl = cfgBaseUrl ? cfgBaseUrl.value.trim() : '';
+          const apiKey = cfgApiKey ? cfgApiKey.value.trim() : '';
+          const model = typeof getEffectiveModel === 'function' ? getEffectiveModel() : '';
+          const commandMode = cfgCmdMode ? cfgCmdMode.value : 'prompt';
+          const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
+          const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+          const customAgentsMdPath = cfgAgentsPath ? cfgAgentsPath.value.trim() : '';
+
+          vscode.postMessage({
+            type: 'saveConfig',
+            config: {
+              baseUrl: baseUrl,
+              apiKey: apiKey,
+              model: model,
+              commandMode: commandMode,
+              temperature: temperature,
+              maxTokens: maxTokens,
+              autoContinue: nextState,
+              customAgentsMdPath: customAgentsMdPath
+            }
+          });
+        });
+      }
+
+      if (cfgAutoContinue) {
+        cfgAutoContinue.addEventListener('change', function() {
+          updateAutoContinueUI(cfgAutoContinue.checked);
+        });
+      }
+
+>>>>>>> Stashed changes
       function insertTag(tag) {
         if (!promptInput) return;
         const val = promptInput.value || '';
@@ -1360,12 +1658,103 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       }
       window.insertTag = insertTag;
 
+      function updateTokenMeter(used, max, model) {
+        const u = Number(used) || 0;
+        const m = Number(max) || 128000;
+        const percent = m > 0 ? Math.min(100, Math.round((u / m) * 100)) : 0;
+        const label = document.getElementById('token-meter-label');
+        const fill = document.getElementById('context-meter-fill');
+        const badge = document.getElementById('token-model-badge');
+
+        const formatK = function(n) {
+          if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+          if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+          return String(n);
+        };
+
+        if (label) {
+          label.textContent = '🧠 Context: ' + formatK(u) + ' / ' + formatK(m) + ' (' + percent + '%)';
+        }
+        if (badge && model) {
+          badge.textContent = model;
+          badge.title = 'Model: ' + model + ' (' + m.toLocaleString() + ' max context window)';
+        }
+        if (fill) {
+          fill.style.width = percent + '%';
+          fill.classList.remove('warning', 'danger');
+          if (percent >= 80) {
+            fill.classList.add('danger');
+          } else if (percent >= 50) {
+            fill.classList.add('warning');
+          }
+        }
+      }
+      window.updateTokenMeter = updateTokenMeter;
+
+      const contextTooltip = document.getElementById('context-tooltip');
+      const tooltipTitle = document.getElementById('tooltip-title');
+      const tooltipDesc = document.getElementById('tooltip-desc');
+      const contextBar = document.querySelector('.context-bar');
+
+      function hideContextTooltip() {
+        if (contextTooltip) {
+          contextTooltip.classList.remove('visible');
+          contextTooltip.style.display = 'none';
+        }
+      }
+
+      function showContextTooltip(chip) {
+        if (!contextTooltip || !tooltipTitle || !tooltipDesc || !chip) return;
+        const title = chip.getAttribute('data-tooltip-title');
+        const desc = chip.getAttribute('data-tooltip-desc');
+        if (!title && !desc) return;
+
+        tooltipTitle.textContent = title || '';
+        tooltipDesc.textContent = desc || '';
+        contextTooltip.style.display = 'block';
+
+        const chipRect = chip.getBoundingClientRect();
+        const inputContainer = chip.closest('.input-container');
+        if (inputContainer) {
+          const containerRect = inputContainer.getBoundingClientRect();
+          let leftPos = chipRect.left - containerRect.left;
+          const tooltipWidth = contextTooltip.offsetWidth || 220;
+          if (leftPos + tooltipWidth > containerRect.width - 12) {
+            leftPos = Math.max(8, containerRect.width - tooltipWidth - 12);
+          }
+          contextTooltip.style.left = Math.max(8, leftPos) + 'px';
+        }
+        // Trigger smooth visual pop-in
+        void contextTooltip.offsetHeight;
+        contextTooltip.classList.add('visible');
+      }
+
+      if (contextBar) {
+        contextBar.addEventListener('mouseover', function(e) {
+          const chip = e.target && e.target.closest ? e.target.closest('.context-chip') : null;
+          if (chip) {
+            showContextTooltip(chip);
+          }
+        });
+
+        contextBar.addEventListener('mouseout', function(e) {
+          const chip = e.target && e.target.closest ? e.target.closest('.context-chip') : null;
+          const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.context-chip') : null;
+          if (chip && chip !== related) {
+            hideContextTooltip();
+          }
+        });
+      }
+
       document.addEventListener('click', function(e) {
+        hideContextTooltip();
         const chip = e.target && e.target.closest ? e.target.closest('.context-chip') : null;
-        if (chip) {
-          e.preventDefault();
-          const tag = chip.getAttribute('data-tag') || (chip.id === 'add-editor-btn' ? '@editor' : chip.id === 'add-selection-btn' ? '@selection' : '@terminal');
-          insertTag(tag);
+        if (chip && chip.id !== 'auto-continue-toggle-btn') {
+          const tag = chip.getAttribute('data-tag') || (chip.id === 'add-editor-btn' ? '@editor' : chip.id === 'add-selection-btn' ? '@selection' : chip.id === 'add-terminal-btn' ? '@terminal' : chip.id === 'add-problems-btn' ? '@problems' : null);
+          if (tag) {
+            e.preventDefault();
+            insertTag(tag);
+          }
         }
       });
 
@@ -1541,6 +1930,8 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         const commandMode = cfgCmdMode.value;
         const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
         const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+        const autoContinue = cfgAutoContinue ? cfgAutoContinue.checked : false;
+        const customAgentsMdPath = cfgAgentsPath ? cfgAgentsPath.value.trim() : '';
 
         cfgStatus.textContent = 'Saving...';
         vscode.postMessage({
@@ -1551,7 +1942,9 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
             model: model,
             commandMode: commandMode,
             temperature: temperature,
-            maxTokens: maxTokens
+            maxTokens: maxTokens,
+            autoContinue: autoContinue,
+            customAgentsMdPath: customAgentsMdPath
           }
         });
       });
@@ -1585,9 +1978,10 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
       });
 
       const contextMentions = [
-        { id: 'terminal', name: 'Terminal Output', description: 'Attach active terminal buffer or selection', source: 'context', triggerChar: '@' },
-        { id: 'editor', name: 'Active Editor File', description: 'Attach full active file from editor', source: 'context', triggerChar: '@' },
-        { id: 'selection', name: 'Code Selection', description: 'Attach highlighted editor code selection', source: 'context', triggerChar: '@' }
+        { id: 'editor', name: 'Active Editor File', description: 'Injects entire active file into prompt', source: 'context', triggerChar: '@' },
+        { id: 'selection', name: 'Code Selection', description: 'Injects highlighted code snippet or line', source: 'context', triggerChar: '@' },
+        { id: 'terminal', name: 'Terminal Output', description: 'Injects active terminal logs or selection', source: 'context', triggerChar: '@' },
+        { id: 'problems', name: 'Linter & Compiler Problems', description: 'Injects active compiler & lint diagnostics', source: 'context', triggerChar: '@' }
       ];
 
       let autocompleteItems = [];
@@ -1960,12 +2354,30 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         title.className = 'tool-name';
         title.innerHTML = icon + ' <span>' + escapeHtml(name) + ' running...</span>';
 
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'tool-actions';
+
+        const killBtn = document.createElement('button');
+        killBtn.className = 'tool-kill-btn';
+        killBtn.title = 'Kill / Cancel this process';
+        killBtn.innerHTML = '🗑️ Kill';
+        killBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          killBtn.disabled = true;
+          killBtn.textContent = 'Killing...';
+          badge.classList.add('cancelling');
+          vscode.postMessage({ type: 'killRunningTool', toolId: id, name: name });
+        });
+
         const toggle = document.createElement('span');
         toggle.innerText = '▼';
         toggle.style.fontSize = '9px';
 
+        actionsContainer.appendChild(killBtn);
+        actionsContainer.appendChild(toggle);
+
         header.appendChild(title);
-        header.appendChild(toggle);
+        header.appendChild(actionsContainer);
 
         const details = document.createElement('div');
         details.className = 'tool-details';
@@ -1995,6 +2407,10 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
         if (!msg) return;
 
         switch (msg.type) {
+          case 'tokenUpdate': {
+            updateTokenMeter(msg.usedTokens, msg.maxTokens, msg.model);
+            break;
+          }
           case 'historyLoaded': {
             renderHistoryMessages(msg.thread);
             if (msg.threads) {
@@ -2064,6 +2480,14 @@ Type <b>/</b> to search and activate specialized skills (e.g. <code>/audio_desig
                 if (cfgMaxTokens) {
                   cfgMaxTokens.value = 8192;
                 }
+              }
+              if (msg.config.autoContinue !== undefined) {
+                updateAutoContinueUI(Boolean(msg.config.autoContinue));
+              } else {
+                updateAutoContinueUI(false);
+              }
+              if (cfgAgentsPath) {
+                cfgAgentsPath.value = msg.config.customAgentsMdPath || '';
               }
             }
             break;
