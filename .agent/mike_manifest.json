@@ -6,9 +6,7 @@
   "description": "M.I.K.E. (Machine-Integrated Koding Extension) is a high-performance, autonomous AI software engineering extension for Visual Studio Code. Built natively with the VS Code Extensibility API and modern ",
   "git": {
     "remote": "https://github.com/mdziejma/Machine_Integrated_Koding_Extension.git",
-    "default_branch": "Devl_2",
-    "last_activity": "2026-10-07 15:16:57 -0400",
-    "is_dirty": true
+    "default_branch": "Devl_2"
   },
   "cloud": {
     "primary_project_id": null,
@@ -84,6 +82,5 @@
       "command": "npm run publish:ovsx",
       "tooltip": "Publish packaged VSIX artifact to Open VSX Registry (prompts for PAT)."
     }
-  },
-  "last_harvested": "2026-10-09"
+  }
 }
