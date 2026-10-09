@@ -82,30 +82,19 @@ npm run publish:vscode -- --packagePath *.vsix -p <YOUR_AZURE_PAT>
 
 ---
 
-## 🤖 4. Automated Publishing with GitHub Actions
+## 📦 4. Release & Publishing Workflow
 
-The repository includes an automated GitHub Actions workflow (`.github/workflows/release.yml`).
+GitHub Actions has been removed to avoid cloud workflow runs and notifications. Releases are packaged and published directly from your local terminal:
 
-### Setup GitHub Secrets
-In your new GitHub repository, navigate to **Settings** $\rightarrow$ **Secrets and variables** $\rightarrow$ **Actions** and add:
-- `OVSX_PAT`: Your Open VSX Personal Access Token.
-- `VSCE_PAT`: Your Azure DevOps / VS Code Marketplace Personal Access Token.
-
-### Triggering a Release
-To publish a new version automatically:
 1. Update `version` in `package.json`.
-2. Commit and push your changes:
+2. Compile and package the `.vsix`:
    ```bash
-   git commit -am "Release v1.6.0"
-   git tag v1.6.0
-   git push origin main --tags
+   npm run package
    ```
-3. GitHub Actions will automatically:
-   - Compile TypeScript in strict mode.
-   - Run the automated unit test suite.
-   - Package the `.vsix` bundle.
-   - Create a GitHub Release with the attached `.vsix`.
-   - Publish the extension to Open VSX and the VS Code Marketplace.
+3. Publish to Open VSX (optional):
+   ```bash
+   node scripts/publish_ovsx.mjs
+   ```
 
 ---
 
