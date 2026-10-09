@@ -95,12 +95,24 @@ export function getSidebarHtml(webview: vscode.Webview, extensionUri: vscode.Uri
       <span style="font-size: 10px; opacity: 0.65;">Default: 8192 tokens (prevents code truncation).</span>
     </div>
     <div class="config-field">
+      <label class="config-label">Max Tool Execution Turns</label>
+      <input id="cfg-max-turns" class="config-input" type="number" min="1" max="100" step="5" value="25" />
+      <span style="font-size: 10px; opacity: 0.65;">Default: 25 turns (maximum consecutive tool steps before pausing).</span>
+    </div>
+    <div class="config-field">
       <label class="config-label">Command Execution Policy</label>
       <select id="cfg-cmd-mode" class="config-input">
         <option value="prompt">Ask Before Running (Prompt)</option>
         <option value="auto">Always Allow (Autonomous)</option>
         <option value="deny">Disabled (Block Shell)</option>
       </select>
+    </div>
+    <div class="config-field" style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+      <div>
+        <label class="config-label" style="margin-bottom: 0;">⚡ Autonomous Auto-Continue</label>
+        <span style="font-size: 10px; opacity: 0.65; display: block;">Execute multi-step tool calls without stopping for approval.</span>
+      </div>
+      <input id="cfg-auto-continue" type="checkbox" style="cursor: pointer; width: 18px; height: 18px; accent-color: var(--accent);" />
     </div>
     <div class="config-actions">
       <span id="cfg-status" class="config-status"></span>

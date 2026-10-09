@@ -1,0 +1,89 @@
+{
+  "$schema": "https://mike-llc-ct.web.app/schemas/mike-manifest.v1.json",
+  "name": "Machine_Integrated_Koding_Extension",
+  "display_name": "Machine Integrated Koding Extension",
+  "archetype": "VS Code / IDE Extension",
+  "description": "M.I.K.E. (Machine-Integrated Koding Extension) is a high-performance, autonomous AI software engineering extension for Visual Studio Code. Built natively with the VS Code Extensibility API and modern ",
+  "git": {
+    "remote": "https://github.com/mdziejma/Machine_Integrated_Koding_Extension.git",
+    "default_branch": "Devl_2",
+    "last_activity": "2026-10-07 15:16:57 -0400",
+    "is_dirty": true
+  },
+  "cloud": {
+    "primary_project_id": null,
+    "billing_plan": "None",
+    "all_gcp_projects": [],
+    "hosting_targets": [],
+    "hosting_urls": [],
+    "has_firestore": false,
+    "has_realtime_db": false,
+    "has_storage": false,
+    "has_cloud_run": false
+  },
+  "ai_runtime": {
+    "has_ai": false,
+    "sdks": [],
+    "auth_methods": [],
+    "models_in_use": {},
+    "deprecation_watch": []
+  },
+  "agent_harness": {
+    "primary_agent": "antigravity-white",
+    "mcp_servers": [
+      "file-writer"
+    ],
+    "active_skills": [
+      "rtfm",
+      "purify"
+    ],
+    "context_budget": "128k"
+  },
+  "env_contract": {
+    "required_vars": [],
+    "sample_file": null
+  },
+  "security_watch": {
+    "active_cves": [],
+    "audit_status": "clean"
+  },
+  "compute": {
+    "requires_gpu": false,
+    "gpu_frameworks": []
+  },
+  "subcomponents": [
+    {
+      "name": "scripts",
+      "type": "local_scripts",
+      "path": "scripts"
+    }
+  ],
+  "actions": {
+    "build": {
+      "label": "\ud83d\udd28 Build",
+      "command": "npm run compile",
+      "tooltip": "Compile TypeScript sources into ./out."
+    },
+    "test": {
+      "label": "\ud83e\uddea Run Tests",
+      "command": "npm test",
+      "tooltip": "Run session persistence and inline transform test suites."
+    },
+    "mock_llm": {
+      "label": "\ud83e\udd16 Start Mock LLM",
+      "command": "npm run mock-server",
+      "tooltip": "Launch zero-dependency local OpenAI-compatible mock LLM server (port 11435) for offline connectivity testing."
+    },
+    "package": {
+      "label": "\ud83d\udce6 Package VSIX",
+      "command": "npm run package",
+      "tooltip": "Compile and package standalone .vsix extension bundle."
+    },
+    "publish_ovsx": {
+      "label": "\ud83c\udf10 Publish Open VSX",
+      "command": "npm run publish:ovsx",
+      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry (prompts for PAT)."
+    }
+  },
+  "last_harvested": "2026-10-09"
+}

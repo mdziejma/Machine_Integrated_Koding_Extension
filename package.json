@@ -221,6 +221,13 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically continue autonomous execution loops across multi-step turns without pausing for user confirmation (Warning: may execute multiple phases without stopping)"
+        },
+        "mike.maxTurns": {
+          "type": "number",
+          "default": 25,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum consecutive tool execution turns per request before pausing for user confirmation (default: 25 turns)"
         }
       }
     }

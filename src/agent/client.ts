@@ -272,6 +272,7 @@ CRITICAL OPERATIONAL RULES:
     commandMode?: 'prompt' | 'auto' | 'deny';
     temperature?: number;
     maxTokens?: number;
+    maxTurns?: number;
     autoContinue?: boolean;
     customAgentsMdPath?: string;
   }): Promise<void> {
@@ -297,6 +298,9 @@ CRITICAL OPERATIONAL RULES:
     }
     if (config.maxTokens !== undefined) {
       await this.globalState?.update('mike.maxTokens', Number(config.maxTokens));
+    }
+    if (config.maxTurns !== undefined) {
+      await this.globalState?.update('mike.maxTurns', Number(config.maxTurns));
     }
     if (config.autoContinue !== undefined) {
       await this.globalState?.update('mike.autoContinue', Boolean(config.autoContinue));
@@ -325,6 +329,9 @@ CRITICAL OPERATIONAL RULES:
       }
       if (config.maxTokens !== undefined) {
         await vsConfig.update('maxTokens', Number(config.maxTokens), vscode.ConfigurationTarget.Global);
+      }
+      if (config.maxTurns !== undefined) {
+        await vsConfig.update('maxTurns', Number(config.maxTurns), vscode.ConfigurationTarget.Global);
       }
       if (config.autoContinue !== undefined) {
         await vsConfig.update('autoContinue', Boolean(config.autoContinue), vscode.ConfigurationTarget.Global);
@@ -485,6 +492,7 @@ CRITICAL OPERATIONAL RULES:
     commandMode: 'prompt' | 'auto' | 'deny';
     temperature: number;
     maxTokens: number;
+    maxTurns: number;
     autoContinue: boolean;
     customAgentsMdPath: string;
   }> {
@@ -550,13 +558,23 @@ CRITICAL OPERATIONAL RULES:
         ? configAutoContinue
         : false;
 
-    // 8. Custom AGENTS.md Path priority: globalState -> settings -> ''
+    // 8. Max Turns priority: globalState -> settings -> 25
+    const storedMaxTurns = this.globalState?.get<number>('mike.maxTurns');
+    const configMaxTurns = config.get<number>('maxTurns');
+    const maxTurns =
+      storedMaxTurns !== undefined
+        ? storedMaxTurns
+        : configMaxTurns !== undefined
+        ? configMaxTurns
+        : 25;
+
+    // 9. Custom AGENTS.md Path priority: globalState -> settings -> ''
     const customAgentsMdPath =
       this.globalState?.get<string>('mike.customAgentsMdPath') ||
       config.get<string>('customAgentsMdPath') ||
       '';
 
-    return { baseUrl, apiKey, model, commandMode, temperature, maxTokens, autoContinue, customAgentsMdPath };
+    return { baseUrl, apiKey, model, commandMode, temperature, maxTokens, maxTurns, autoContinue, customAgentsMdPath };
   }
 
   /**
@@ -571,7 +589,7 @@ CRITICAL OPERATIONAL RULES:
     const userHome = os.homedir();
     const MAX_DIRECTIVE_CHARS = 25000;
 
-    const { customAgentsMdPath } = await this.getConfig();
+    const { customAgentsMdPath, autoContinue } = await this.getConfig();
 
     // 1. Check Global AGENTS.md
     const globalAgentsPaths: string[] = [];
@@ -676,6 +694,12 @@ CRITICAL OPERATIONAL RULES:
           } catch {}
         }
       }
+    }
+
+    if (autoContinue) {
+      promptParts.push(`\n[AUTONOMOUS EXECUTION DIRECTIVE: AUTO-CONTINUE IS ACTIVE]
+You are operating in Autonomous Execution Mode. You must continuously execute all necessary tool calls (read_file, write_file, grep_search, find_symbol, list_dir, run_command) until the user's objective is fully accomplished.
+DO NOT pause after each step to ask conversational questions like "Shall I proceed?", "Would you like me to continue?", or "Let me know if you want me to do the next phase". Issue the next tool call directly until everything is complete.`);
     }
 
     return promptParts.join('\n\n');
@@ -1016,7 +1040,7 @@ ${userMessage}`;
     callbacks: AgentCallbacks,
     abortSignal: AbortSignal
   ): Promise<ChatMessage[]> {
-    const { baseUrl, apiKey, model, temperature, maxTokens } = await this.getConfig();
+    const { baseUrl, apiKey, model, temperature, maxTokens, maxTurns, autoContinue } = await this.getConfig();
     const endpoint = this.lastWorkingEndpoint || this.resolveEndpoint(baseUrl);
 
     const workingHistory: ChatMessage[] = [...history];
@@ -1025,16 +1049,22 @@ ${userMessage}`;
       workingHistory.unshift({ role: 'system', content: dynamicSystemPrompt });
     }
 
-    const MAX_TURNS = 20;
+    // Run multi-turn tool loops up to the user-configured maxTurns (default: 25 turns).
+    const turnLimit = Math.max(1, maxTurns || 25);
     let turnCount = 0;
+    let lastTurnHadTools = false;
 
-    while (turnCount < MAX_TURNS) {
+    while (turnCount < turnLimit) {
       if (abortSignal.aborted) {
         throw new Error('Agent execution cancelled by user.');
       }
 
       turnCount++;
-      callbacks.onStatusUpdate?.('Thinking...');
+      callbacks.onStatusUpdate?.(
+        autoContinue && turnLimit > 1
+          ? `Thinking (Turn ${turnCount}/${turnLimit})...`
+          : 'Thinking...'
+      );
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
@@ -1230,9 +1260,12 @@ ${userMessage}`;
       workingHistory.push(assistantMessage);
 
       if (emittedToolCalls.length === 0) {
+        lastTurnHadTools = false;
         callbacks.onStatusUpdate?.('Ready');
         break;
       }
+
+      lastTurnHadTools = true;
 
       for (const toolCall of emittedToolCalls) {
         if (abortSignal.aborted) {
@@ -1244,7 +1277,11 @@ ${userMessage}`;
           name: toolCall.function.name,
           args: toolCall.function.arguments
         });
-        callbacks.onStatusUpdate?.(`Executing ${toolCall.function.name}...`);
+        callbacks.onStatusUpdate?.(
+          autoContinue && turnLimit > 1
+            ? `Executing ${toolCall.function.name} (Turn ${turnCount}/${turnLimit})...`
+            : `Executing ${toolCall.function.name}...`
+        );
 
         let toolOutput = '';
         let isError = false;
@@ -1272,7 +1309,19 @@ ${userMessage}`;
       }
     }
 
-    callbacks.onStatusUpdate?.('Ready');
+    // If loop exited because of turnLimit while active tool calls were made, give actionable notice
+    if (turnCount >= turnLimit && lastTurnHadTools) {
+      const pauseNotice = `\n\n⏸️ **[Execution Paused]** Reached maximum configured tool turns (${turnLimit}/${turnLimit}). Type \`continue\` or increase **Max Tool Execution Turns** in ⚙️ Settings to proceed.`;
+      callbacks.onDeltaText?.(pauseNotice);
+      workingHistory.push({
+        role: 'assistant',
+        content: pauseNotice
+      });
+      callbacks.onStatusUpdate?.(`Paused: Reached max turns (${turnLimit})`);
+    } else {
+      callbacks.onStatusUpdate?.('Ready');
+    }
+
     return workingHistory;
   }
 
