@@ -47,7 +47,7 @@ You can publish directly using the `ovsx` CLI tool:
 
 ```bash
 # Using npx:
-npx -y ovsx publish mike-koding-extension-1.6.0.vsix -p <YOUR_OPEN_VSX_PAT>
+npx -y ovsx publish mike-koding-extension-2.3.0.vsix -p <YOUR_OPEN_VSX_PAT>
 
 # Or using the package.json script:
 OVSX_PAT=<YOUR_OPEN_VSX_PAT> npm run publish:ovsx -- *.vsix -p $OVSX_PAT
@@ -104,6 +104,20 @@ Releases can be packaged once and pushed to **both** registries simultaneously f
 Users who do not have marketplace access can install the `.vsix` manually:
 
 ```bash
-code --install-extension mike-koding-extension-1.6.0.vsix --force
+code --install-extension mike-koding-extension-2.3.0.vsix --force
 ```
 Or via VS Code UI: `Extensions (Cmd+Shift+X)` $\rightarrow$ `...` (top right) $\rightarrow$ `Install from VSIX...`.
+
+---
+
+## 🗓️ 6. Verified Publisher Badge Milestone (April 13, 2027)
+
+Microsoft VS Code Marketplace requires a **6-month publisher tenure** before enabling the Verified Publisher checkmark review:
+- **Initial Marketplace Publication Date:** October 13, 2026
+- **Eligibility Milestone Date:** **April 13, 2027**
+- **Action Item on Milestone:**
+  1. Go to [Visual Studio Marketplace Publisher Management](https://marketplace.visualstudio.com/manage/publishers/mdzie) $\rightarrow$ **Details**.
+  2. Enter `https://mikedivescode.com` as the verified domain and copy the generated DNS `TXT` token.
+  3. Bind the `TXT` record to `mikedivescode.com` DNS settings.
+  4. Click **Verify** and submit for Verified Publisher badge review.
+
