@@ -71,30 +71,31 @@ Alternatively, you can manually upload the `.vsix` file through the [open-vsx.or
    - **Organization:** `All accessible organizations`
    - **Scopes:** `Marketplace` $\rightarrow$ `Acquire`, `Manage`, `Publish`.
 
-### Step 3: Publish via `@vscode/vsce` CLI
+### Step 3: Publish via CLI
 ```bash
-# Publish using vsce
-npx -y @vscode/vsce publish --packagePath mike-koding-extension-1.6.0.vsix -p <YOUR_AZURE_PAT>
+# Interactive or via environment variable:
+npm run publish:vscode
 
-# Or via npm script:
-npm run publish:vscode -- --packagePath *.vsix -p <YOUR_AZURE_PAT>
+# Or pass token via environment variable:
+VSCE_PAT=<YOUR_AZURE_PAT> npm run publish:vscode
 ```
 
 ---
 
-## 📦 4. Release & Publishing Workflow
+## 📦 4. Dual-Publishing Workflow (Open VSX + Microsoft Marketplace)
 
-GitHub Actions has been removed to avoid cloud workflow runs and notifications. Releases are packaged and published directly from your local terminal:
+Releases can be packaged once and pushed to **both** registries simultaneously from your local terminal or via the **🚀 PUBLISH ALL** workspace action button:
 
 1. Update `version` in `package.json`.
-2. Compile and package the `.vsix`:
+2. Run dual-publish:
    ```bash
-   npm run package
+   npm run publish:all
    ```
-3. Publish to Open VSX (optional):
-   ```bash
-   node scripts/publish_ovsx.mjs
-   ```
+   *(If `OVSX_PAT` and `VSCE_PAT` are not set in your environment, the script will interactively prompt you for each token.)*
+3. Or publish to individual registries:
+   - **Package only:** `npm run package`
+   - **Open VSX only:** `npm run publish:ovsx`
+   - **Microsoft Marketplace only:** `npm run publish:vscode`
 
 ---
 

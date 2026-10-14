@@ -240,7 +240,9 @@
     "package": "npm run compile && node scripts/test_webview_syntax.mjs && node scripts/package_vsix.mjs",
     "package:vsix": "npm run package",
     "publish:ovsx": "node scripts/publish_ovsx.mjs",
-    "publish:vscode": "npx -y @vscode/vsce publish",
+    "publish:vscode": "node scripts/publish_vscode.mjs",
+    "publish:all": "node scripts/publish_all.mjs",
+    "deploy": "node scripts/publish_all.mjs",
     "mock-server": "node scripts/mock_llm_server.mjs"
   },
   "devDependencies": {

@@ -36,6 +36,10 @@ fs.writeFileSync(path.join(stagingDir, '[Content_Types].xml'), contentTypesXml, 
 // 4. Create extension.vsixmanifest
 const iconMetadata = pkg.icon ? `\n\t\t<Icon>extension/${pkg.icon}</Icon>` : '';
 const iconAsset = pkg.icon ? `\n\t\t<Asset Type="Microsoft.VisualStudio.Services.Icons.Default" Path="extension/${pkg.icon}" Addressable="true" />` : '';
+const tagsString = Array.isArray(pkg.keywords) ? pkg.keywords.join(',') : '';
+const repoUrl = typeof pkg.repository === 'string' ? pkg.repository : (pkg.repository?.url || '');
+const homepageUrl = pkg.homepage || '';
+const bugsUrl = typeof pkg.bugs === 'string' ? pkg.bugs : (pkg.bugs?.url || '');
 
 const vsixManifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
@@ -43,7 +47,7 @@ const vsixManifest = `<?xml version="1.0" encoding="utf-8"?>
 		<Identity Language="en-US" Id="${pkg.name}" Version="${pkg.version}" Publisher="${pkg.publisher}" />
 		<DisplayName>${pkg.displayName}</DisplayName>
 		<Description xml:space="preserve">${pkg.description}</Description>
-		<Tags></Tags>
+		<Tags>${tagsString}</Tags>
 		<Categories>${pkg.categories ? pkg.categories.join(',') : 'AI'}</Categories>
 		<GalleryFlags>Public</GalleryFlags>
 		<Properties>
@@ -51,9 +55,9 @@ const vsixManifest = `<?xml version="1.0" encoding="utf-8"?>
 			<Property Id="Microsoft.VisualStudio.Code.ExtensionKind" Value="workspace" />
 			<Property Id="Microsoft.VisualStudio.Code.ExecutesCode" Value="true" />
 			<Property Id="Microsoft.VisualStudio.Services.GitHubFlavoredMarkdown" Value="true" />
-			<Property Id="Microsoft.VisualStudio.Services.Content.Pricing" Value="Free"/>
+			<Property Id="Microsoft.VisualStudio.Services.Content.Pricing" Value="Free"/>${repoUrl ? `\n\t\t\t<Property Id="Microsoft.VisualStudio.Services.Links.Source" Value="${repoUrl}" />\n\t\t\t<Property Id="Microsoft.VisualStudio.Services.Links.Getstarted" Value="${repoUrl}" />\n\t\t\t<Property Id="Microsoft.VisualStudio.Services.Links.GitHub" Value="${repoUrl}" />` : ''}${bugsUrl ? `\n\t\t\t<Property Id="Microsoft.VisualStudio.Services.Links.Support" Value="${bugsUrl}" />` : ''}${homepageUrl ? `\n\t\t\t<Property Id="Microsoft.VisualStudio.Services.Links.Learn" Value="${homepageUrl}" />` : ''}
 		</Properties>
-		<License>extension/LICENSE</License>${iconMetadata}
+		<License>extension/LICENSE.txt</License>${iconMetadata}
 	</Metadata>
 	<Installation>
 		<InstallationTarget Id="Microsoft.VisualStudio.Code"/>
@@ -61,8 +65,8 @@ const vsixManifest = `<?xml version="1.0" encoding="utf-8"?>
 	<Dependencies/>
 	<Assets>
 		<Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" />
-		<Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md" Addressable="true" />
-		<Asset Type="Microsoft.VisualStudio.Services.Content.License" Path="extension/LICENSE" Addressable="true" />${iconAsset}
+		<Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/readme.md" Addressable="true" />
+		<Asset Type="Microsoft.VisualStudio.Services.Content.License" Path="extension/LICENSE.txt" Addressable="true" />${iconAsset}
 	</Assets>
 </PackageManifest>`;
 fs.writeFileSync(path.join(stagingDir, 'extension.vsixmanifest'), vsixManifest, 'utf8');
@@ -76,14 +80,16 @@ fs.copyFileSync(path.join(rootDir, 'package.json'), path.join(extDir, 'package.j
 
 // Copy LICENSE if exists
 if (fs.existsSync(path.join(rootDir, 'LICENSE'))) {
-  fs.copyFileSync(path.join(rootDir, 'LICENSE'), path.join(extDir, 'LICENSE'));
+  fs.copyFileSync(path.join(rootDir, 'LICENSE'), path.join(extDir, 'LICENSE.txt'));
+} else if (fs.existsSync(path.join(rootDir, 'LICENSE.txt'))) {
+  fs.copyFileSync(path.join(rootDir, 'LICENSE.txt'), path.join(extDir, 'LICENSE.txt'));
 }
 
-// Copy root README.md as README.md
+// Copy root README.md as readme.md
 if (fs.existsSync(path.join(rootDir, 'README.md'))) {
-  fs.copyFileSync(path.join(rootDir, 'README.md'), path.join(extDir, 'README.md'));
+  fs.copyFileSync(path.join(rootDir, 'README.md'), path.join(extDir, 'readme.md'));
 } else if (fs.existsSync(path.join(rootDir, 'docs/README.md'))) {
-  fs.copyFileSync(path.join(rootDir, 'docs/README.md'), path.join(extDir, 'README.md'));
+  fs.copyFileSync(path.join(rootDir, 'docs/README.md'), path.join(extDir, 'readme.md'));
 }
 
 // Copy directories recursively
