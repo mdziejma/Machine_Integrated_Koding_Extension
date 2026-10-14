@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { execSync } from 'node:child_process';
@@ -6,6 +7,26 @@ import { execSync } from 'node:child_process';
 const rootDir = process.cwd();
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
 const vsixFile = path.join(rootDir, `${pkg.name}-${pkg.version}.vsix`);
+
+function loadEnvToken(keyName) {
+  if (process.env[keyName]) return process.env[keyName].trim();
+  const envPaths = [
+    path.join(rootDir, '.env'),
+    path.join(os.homedir(), '.env')
+  ];
+  for (const envPath of envPaths) {
+    if (fs.existsSync(envPath)) {
+      const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+      for (const line of lines) {
+        const match = line.match(new RegExp(`^\\s*(?:export\\s+)?${keyName}\\s*=\\s*(.+)\\s*$`));
+        if (match) {
+          return match[1].trim().replace(/^['"]|['"]$/g, '');
+        }
+      }
+    }
+  }
+  return '';
+}
 
 async function promptToken() {
   const rl = readline.createInterface({
@@ -29,7 +50,7 @@ async function main() {
     execSync('npm run package', { stdio: 'inherit' });
   }
 
-  let token = process.env.VSCE_PAT || process.argv[2];
+  let token = loadEnvToken('VSCE_PAT') || process.argv[2];
 
   if (!token) {
     token = await promptToken();

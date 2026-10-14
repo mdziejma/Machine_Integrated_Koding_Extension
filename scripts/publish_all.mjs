@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { execSync } from 'node:child_process';
@@ -6,6 +7,26 @@ import { execSync } from 'node:child_process';
 const rootDir = process.cwd();
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
 const vsixFile = path.join(rootDir, `${pkg.name}-${pkg.version}.vsix`);
+
+function loadEnvToken(keyName) {
+  if (process.env[keyName]) return process.env[keyName].trim();
+  const envPaths = [
+    path.join(rootDir, '.env'),
+    path.join(os.homedir(), '.env')
+  ];
+  for (const envPath of envPaths) {
+    if (fs.existsSync(envPath)) {
+      const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+      for (const line of lines) {
+        const match = line.match(new RegExp(`^\\s*(?:export\\s+)?${keyName}\\s*=\\s*(.+)\\s*$`));
+        if (match) {
+          return match[1].trim().replace(/^['"]|['"]$/g, '');
+        }
+      }
+    }
+  }
+  return '';
+}
 
 function promptQuestion(questionText) {
   const rl = readline.createInterface({
@@ -32,12 +53,12 @@ async function main() {
     process.exit(1);
   }
 
-  let ovsxToken = process.env.OVSX_PAT;
+  let ovsxToken = loadEnvToken('OVSX_PAT');
   if (!ovsxToken) {
     ovsxToken = await promptQuestion(`🔑 Enter Open VSX PAT for v${pkg.version} (or press Enter to skip Open VSX): `);
   }
 
-  let vsceToken = process.env.VSCE_PAT;
+  let vsceToken = loadEnvToken('VSCE_PAT');
   if (!vsceToken) {
     vsceToken = await promptQuestion(`🔑 Enter Microsoft Marketplace PAT (VSCE_PAT) for v${pkg.version} (or press Enter to skip MS Marketplace): `);
   }
@@ -49,10 +70,17 @@ async function main() {
 
   let hasErrors = false;
 
+  const ovsxBin = fs.existsSync('/Users/mdzie/GitHub/Minimal_Intelligent_Kuota_Extension/node_modules/.bin/ovsx')
+    ? '"/Users/mdzie/GitHub/Minimal_Intelligent_Kuota_Extension/node_modules/.bin/ovsx"'
+    : 'npx -y ovsx';
+  const vsceBin = fs.existsSync('/Users/mdzie/GitHub/Minimal_Intelligent_Kuota_Extension/node_modules/.bin/vsce')
+    ? '"/Users/mdzie/GitHub/Minimal_Intelligent_Kuota_Extension/node_modules/.bin/vsce"'
+    : 'npx -y @vscode/vsce';
+
   if (ovsxToken) {
     console.log(`\n🌐 [1/2] Publishing ${path.basename(vsixFile)} to Open VSX Registry...`);
     try {
-      execSync(`npx -y ovsx publish "${vsixFile}" -p "${ovsxToken}"`, { stdio: 'inherit' });
+      execSync(`${ovsxBin} publish "${vsixFile}" -p "${ovsxToken}"`, { stdio: 'inherit' });
       console.log(`✅ Open VSX publish succeeded!`);
     } catch (err) {
       console.error(`❌ Open VSX publish failed.`);
@@ -63,7 +91,7 @@ async function main() {
   if (vsceToken) {
     console.log(`\n🛍️  [2/2] Publishing ${path.basename(vsixFile)} to Microsoft VS Code Marketplace...`);
     try {
-      execSync(`npx -y @vscode/vsce publish --packagePath "${vsixFile}" -p "${vsceToken}"`, { stdio: 'inherit' });
+      execSync(`${vsceBin} publish --packagePath "${vsixFile}" -p "${vsceToken}"`, { stdio: 'inherit' });
       console.log(`✅ Microsoft Marketplace publish succeeded!`);
     } catch (err) {
       console.error(`❌ Microsoft Marketplace publish failed.`);
