@@ -47,7 +47,7 @@ You can publish directly using the `ovsx` CLI tool:
 
 ```bash
 # Using npx:
-npx -y ovsx publish mike-koding-extension-1.6.0.vsix -p <YOUR_OPEN_VSX_PAT>
+npx -y ovsx publish mike-koding-extension-2.3.0.vsix -p <YOUR_OPEN_VSX_PAT>
 
 # Or using the package.json script:
 OVSX_PAT=<YOUR_OPEN_VSX_PAT> npm run publish:ovsx -- *.vsix -p $OVSX_PAT
@@ -71,41 +71,31 @@ Alternatively, you can manually upload the `.vsix` file through the [open-vsx.or
    - **Organization:** `All accessible organizations`
    - **Scopes:** `Marketplace` $\rightarrow$ `Acquire`, `Manage`, `Publish`.
 
-### Step 3: Publish via `@vscode/vsce` CLI
+### Step 3: Publish via CLI
 ```bash
-# Publish using vsce
-npx -y @vscode/vsce publish --packagePath mike-koding-extension-1.6.0.vsix -p <YOUR_AZURE_PAT>
+# Interactive or via environment variable:
+npm run publish:vscode
 
-# Or via npm script:
-npm run publish:vscode -- --packagePath *.vsix -p <YOUR_AZURE_PAT>
+# Or pass token via environment variable:
+VSCE_PAT=<YOUR_AZURE_PAT> npm run publish:vscode
 ```
 
 ---
 
-## 🤖 4. Automated Publishing with GitHub Actions
+## 📦 4. Dual-Publishing Workflow (Open VSX + Microsoft Marketplace)
 
-The repository includes an automated GitHub Actions workflow (`.github/workflows/release.yml`).
+Releases can be packaged once and pushed to **both** registries simultaneously from your local terminal or via the **🚀 PUBLISH ALL** workspace action button:
 
-### Setup GitHub Secrets
-In your new GitHub repository, navigate to **Settings** $\rightarrow$ **Secrets and variables** $\rightarrow$ **Actions** and add:
-- `OVSX_PAT`: Your Open VSX Personal Access Token.
-- `VSCE_PAT`: Your Azure DevOps / VS Code Marketplace Personal Access Token.
-
-### Triggering a Release
-To publish a new version automatically:
 1. Update `version` in `package.json`.
-2. Commit and push your changes:
+2. Run dual-publish:
    ```bash
-   git commit -am "Release v1.6.0"
-   git tag v1.6.0
-   git push origin main --tags
+   npm run publish:all
    ```
-3. GitHub Actions will automatically:
-   - Compile TypeScript in strict mode.
-   - Run the automated unit test suite.
-   - Package the `.vsix` bundle.
-   - Create a GitHub Release with the attached `.vsix`.
-   - Publish the extension to Open VSX and the VS Code Marketplace.
+   *(If `OVSX_PAT` and `VSCE_PAT` are not set in your environment, the script will interactively prompt you for each token.)*
+3. Or publish to individual registries:
+   - **Package only:** `npm run package`
+   - **Open VSX only:** `npm run publish:ovsx`
+   - **Microsoft Marketplace only:** `npm run publish:vscode`
 
 ---
 
@@ -114,6 +104,20 @@ To publish a new version automatically:
 Users who do not have marketplace access can install the `.vsix` manually:
 
 ```bash
-code --install-extension mike-koding-extension-1.6.0.vsix --force
+code --install-extension mike-koding-extension-2.3.0.vsix --force
 ```
 Or via VS Code UI: `Extensions (Cmd+Shift+X)` $\rightarrow$ `...` (top right) $\rightarrow$ `Install from VSIX...`.
+
+---
+
+## 🗓️ 6. Verified Publisher Badge Milestone (April 13, 2027)
+
+Microsoft VS Code Marketplace requires a **6-month publisher tenure** before enabling the Verified Publisher checkmark review:
+- **Initial Marketplace Publication Date:** October 13, 2026
+- **Eligibility Milestone Date:** **April 13, 2027**
+- **Action Item on Milestone:**
+  1. Go to [Visual Studio Marketplace Publisher Management](https://marketplace.visualstudio.com/manage/publishers/mdzie) $\rightarrow$ **Details**.
+  2. Enter `https://mikedivescode.com` as the verified domain and copy the generated DNS `TXT` token.
+  3. Bind the `TXT` record to `mikedivescode.com` DNS settings.
+  4. Click **Verify** and submit for Verified Publisher badge review.
+

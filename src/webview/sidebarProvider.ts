@@ -261,6 +261,7 @@ export class MikeSidebarProvider implements vscode.WebviewViewProvider {
     commandMode?: 'prompt' | 'auto' | 'deny';
     temperature?: number;
     maxTokens?: number;
+    maxTurns?: number;
     autoContinue?: boolean;
     customAgentsMdPath?: string;
   }): Promise<void> {

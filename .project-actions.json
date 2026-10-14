@@ -38,9 +38,25 @@
       "id": "publish_ovsx",
       "label": "🌐 Publish Open VSX",
       "text": "$(cloud-upload) OPEN-VSX",
-      "command": "npx -y ovsx publish *.vsix",
-      "description": "Publish packaged VSIX artifact to Open VSX Registry.",
-      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry."
+      "command": "npm run publish:ovsx",
+      "description": "Publish packaged VSIX artifact to Open VSX Registry (prompts for PAT).",
+      "tooltip": "Publish packaged VSIX artifact to Open VSX Registry (prompts for PAT)."
+    },
+    {
+      "id": "publish_vscode",
+      "label": "🛍️ Publish MS Marketplace",
+      "text": "$(extensions) MS-MARKET",
+      "command": "npm run publish:vscode",
+      "description": "Publish packaged VSIX artifact to Microsoft VS Code Marketplace (prompts for VSCE_PAT).",
+      "tooltip": "Publish packaged VSIX artifact to Microsoft VS Code Marketplace (prompts for VSCE_PAT)."
+    },
+    {
+      "id": "publish",
+      "label": "🚀 Dual Publish (All)",
+      "text": "$(rocket) PUBLISH ALL",
+      "command": "npm run publish:all",
+      "description": "Package once and publish identical VSIX to both Open VSX and Microsoft VS Code Marketplace.",
+      "tooltip": "Package once and publish identical VSIX to both Open VSX and Microsoft VS Code Marketplace."
     }
   ]
 }

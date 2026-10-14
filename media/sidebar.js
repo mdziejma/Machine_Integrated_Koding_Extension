@@ -27,6 +27,7 @@
   const cfgTemperature = document.getElementById('cfg-temperature');
   const cfgTempVal = document.getElementById('cfg-temp-val');
   const cfgMaxTokens = document.getElementById('cfg-max-tokens');
+  const cfgMaxTurns = document.getElementById('cfg-max-turns');
   const cfgCmdMode = document.getElementById('cfg-cmd-mode');
   const cfgAutoContinue = document.getElementById('cfg-auto-continue');
   const autoContinueToggleBtn = document.getElementById('auto-continue-toggle-btn');
@@ -41,13 +42,15 @@
   const statusDot = document.getElementById('status-dot');
   const autocompleteMenu = document.getElementById('autocomplete-menu');
 
+  let isAutoContinueEnabled = false;
+
   function updateAutoContinueUI(isEnabled) {
-    const active = Boolean(isEnabled);
+    isAutoContinueEnabled = Boolean(isEnabled);
     if (cfgAutoContinue) {
-      cfgAutoContinue.checked = active;
+      cfgAutoContinue.checked = isAutoContinueEnabled;
     }
     if (autoContinueToggleBtn && autoContinueLabel) {
-      if (active) {
+      if (isAutoContinueEnabled) {
         autoContinueToggleBtn.classList.add('active');
         autoContinueLabel.textContent = 'Auto-Continue: ON';
         autoContinueToggleBtn.setAttribute('data-tooltip-title', '⚡ Auto-Continue: ON');
@@ -61,40 +64,45 @@
     }
   }
 
+  function dispatchAutoContinueConfig(nextState) {
+    updateAutoContinueUI(nextState);
+
+    const baseUrl = cfgBaseUrl ? cfgBaseUrl.value.trim() : '';
+    const apiKey = cfgApiKey ? cfgApiKey.value.trim() : '';
+    const model = typeof getEffectiveModel === 'function' ? getEffectiveModel() : '';
+    const commandMode = cfgCmdMode ? cfgCmdMode.value : 'prompt';
+    const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
+    const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+    const maxTurns = cfgMaxTurns ? (parseInt(cfgMaxTurns.value, 10) || 25) : 25;
+    const customAgentsMdPath = cfgAgentsPath ? cfgAgentsPath.value.trim() : '';
+
+    vscode.postMessage({
+      type: 'saveConfig',
+      config: {
+        baseUrl: baseUrl,
+        apiKey: apiKey,
+        model: model,
+        commandMode: commandMode,
+        temperature: temperature,
+        maxTokens: maxTokens,
+        maxTurns: maxTurns,
+        autoContinue: nextState,
+        customAgentsMdPath: customAgentsMdPath
+      }
+    });
+  }
+
   if (autoContinueToggleBtn) {
     autoContinueToggleBtn.addEventListener('click', function(e) {
       e.preventDefault();
       e.stopPropagation();
-      const nextState = cfgAutoContinue ? !cfgAutoContinue.checked : false;
-      updateAutoContinueUI(nextState);
-
-      const baseUrl = cfgBaseUrl ? cfgBaseUrl.value.trim() : '';
-      const apiKey = cfgApiKey ? cfgApiKey.value.trim() : '';
-      const model = typeof getEffectiveModel === 'function' ? getEffectiveModel() : '';
-      const commandMode = cfgCmdMode ? cfgCmdMode.value : 'prompt';
-      const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
-      const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
-      const customAgentsMdPath = cfgAgentsPath ? cfgAgentsPath.value.trim() : '';
-
-      vscode.postMessage({
-        type: 'saveConfig',
-        config: {
-          baseUrl: baseUrl,
-          apiKey: apiKey,
-          model: model,
-          commandMode: commandMode,
-          temperature: temperature,
-          maxTokens: maxTokens,
-          autoContinue: nextState,
-          customAgentsMdPath: customAgentsMdPath
-        }
-      });
+      dispatchAutoContinueConfig(!isAutoContinueEnabled);
     });
   }
 
   if (cfgAutoContinue) {
     cfgAutoContinue.addEventListener('change', function() {
-      updateAutoContinueUI(cfgAutoContinue.checked);
+      dispatchAutoContinueConfig(cfgAutoContinue.checked);
     });
   }
 
@@ -391,7 +399,8 @@
       const commandMode = cfgCmdMode ? cfgCmdMode.value : 'prompt';
       const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
       const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
-      const autoContinue = cfgAutoContinue ? cfgAutoContinue.checked : false;
+      const maxTurns = cfgMaxTurns ? (parseInt(cfgMaxTurns.value, 10) || 25) : 25;
+      const autoContinue = cfgAutoContinue ? cfgAutoContinue.checked : isAutoContinueEnabled;
       const customAgentsMdPath = cfgAgentsPath ? cfgAgentsPath.value.trim() : '';
 
       if (cfgStatus) cfgStatus.textContent = 'Saving...';
@@ -404,6 +413,7 @@
           commandMode: commandMode,
           temperature: temperature,
           maxTokens: maxTokens,
+          maxTurns: maxTurns,
           autoContinue: autoContinue,
           customAgentsMdPath: customAgentsMdPath
         }
@@ -417,6 +427,7 @@
       const model = getEffectiveModel();
       const temperature = cfgTemperature ? parseFloat(cfgTemperature.value) : 0.0;
       const maxTokens = cfgMaxTokens ? (parseInt(cfgMaxTokens.value, 10) || 8192) : 8192;
+      const maxTurns = cfgMaxTurns ? (parseInt(cfgMaxTurns.value, 10) || 25) : 25;
 
       vscode.postMessage({
         type: 'testConnection',
@@ -426,7 +437,8 @@
           model: model,
           commandMode: cfgCmdMode ? cfgCmdMode.value : 'prompt',
           temperature: temperature,
-          maxTokens: maxTokens
+          maxTokens: maxTokens,
+          maxTurns: maxTurns
         }
       });
     });
@@ -976,6 +988,15 @@
           } else {
             if (cfgMaxTokens) {
               cfgMaxTokens.value = 8192;
+            }
+          }
+          if (msg.config.maxTurns !== undefined) {
+            if (cfgMaxTurns) {
+              cfgMaxTurns.value = msg.config.maxTurns;
+            }
+          } else {
+            if (cfgMaxTurns) {
+              cfgMaxTurns.value = 25;
             }
           }
           if (msg.config.autoContinue !== undefined) {

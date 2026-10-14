@@ -5,10 +5,13 @@
 # M.I.K.E. — Machine-Integrated Koding Extension
 
 <p align="left">
+  <a href="https://marketplace.visualstudio.com/items?itemName=mdzie.mike-koding-extension"><img src="https://img.shields.io/visual-studio-marketplace/v/mdzie.mike-koding-extension?style=flat-square&label=VS%20Marketplace&logo=visual-studio-code" alt="VS Marketplace Version" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=mdzie.mike-koding-extension"><img src="https://img.shields.io/visual-studio-marketplace/d/mdzie.mike-koding-extension?style=flat-square&label=Marketplace%20Downloads" alt="VS Marketplace Downloads" /></a>
+  <a href="https://open-vsx.org/extension/mdzie/mike-koding-extension"><img src="https://img.shields.io/open-vsx/v/mdzie/mike-koding-extension?style=flat-square&label=Open%20VSX" alt="Open VSX Version" /></a>
+  <a href="https://open-vsx.org/extension/mdzie/mike-koding-extension"><img src="https://img.shields.io/open-vsx/dt/mdzie/mike-koding-extension?style=flat-square&label=Open%20VSX%20Downloads&color=orange" alt="Open VSX Downloads" /></a>
   <img src="https://img.shields.io/badge/VS_Code-^1.85.0-blue.svg?style=flat-square&logo=visual-studio-code" alt="VS Code" />
   <img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/Zero_Runtime_Dependencies-Node_18_Fetch-purple.svg?style=flat-square" alt="Zero Dependencies" />
-  <img src="https://img.shields.io/badge/Open_VSX-Ready-orange.svg?style=flat-square" alt="Open VSX" />
   <img src="https://img.shields.io/badge/Local_&_Cloud_LLMs-Ollama_|_vLLM_|_OpenAI-blueviolet.svg?style=flat-square" alt="LLM Compatibility" />
 </p>
 
@@ -21,7 +24,7 @@
 ### 1. Install Extension
 Install from the Open VSX Registry, VS Code Marketplace, or via `.vsix`:
 ```bash
-code --install-extension mike-koding-extension-1.6.0.vsix --force
+code --install-extension mike-koding-extension-2.3.0.vsix --force
 ```
 
 ### 2. Connect to Your LLM Backend
